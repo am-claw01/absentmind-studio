@@ -42,3 +42,17 @@ If `DRIFT_DETECTED`: stop current work, write a new session_log.md entry, correc
 **Alignment status:** ALIGNED
 
 ---
+
+## 2026-05-10T08:27:31 | /checkpoint
+
+**Triggered by:** Kyle (manual)
+**Phase:** Phase 3 — Training Data Pipeline
+**Last gate completed:** Phase 2 — Style Bible (2026-05-09)
+**Next unchecked gate:** Phase 3 completion gate (corpus finalized, provenance complete, Golden Dataset ≥3,000 human-accepted sprites, calibration report reviewed)
+**Open blockers:** None — CHANGE-032 RESOLVED (D→C path, SPEC_PENDING_032.md)
+**Current work:** Building Golden Dataset triage system (rubric scoring, bucket sorting, curation UI, curation log, golden manifest, calibration report) — 6-task sequence per Kyle's spec
+**Rule governing current work:** Constitution Rule 5 (data provenance discipline); Rule 9 (human override authority — triage is a review surface, not automated curator; Kyle accepts every golden sprite)
+**Constitution confirmed:** yes — Rules 1–9 all present
+**Alignment status:** ALIGNED
+
+---

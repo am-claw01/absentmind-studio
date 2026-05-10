@@ -72,6 +72,15 @@ Evidence: All 4 style bible documents written (345-450 lines each); directories 
 Date completed:
 Evidence:
 
+### Phase 3 Completion Gate Criteria
+- [ ] Provenance manifest: every sprite in corpus has a manifest entry
+- [ ] Pipeline tools validated: extractor, indexer, classifier, reorderer all passing
+- [ ] Triage scoring complete: tools/run_triage_scorer.py run against full Tier 2 corpus
+- [ ] Golden Dataset: minimum 3,000 sprites human-accepted via curation_ui.py
+- [ ] Golden Dataset manifest: data/golden/golden_manifest.json present with ≥3,000 entries
+- [ ] Calibration report: logs/rubric_calibration_report.md generated and reviewed by human before Phase 4
+- [ ] Git commit: "Phase 3 complete: Training data pipeline finalized"
+
 ## Phase 4 — Model Architecture & Initial Training
 
 **PHASE4_ARCHITECTURE_REVIEW: PENDING** — Set to `APPROVED` only after human reviews `model/architecture/` and `IMPLEMENTATION_NOTES.md` (required for `training_run_gate()` — CHANGE-028).

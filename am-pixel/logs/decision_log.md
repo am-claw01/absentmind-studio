@@ -145,3 +145,15 @@ Reasoning log for **non-mechanical** decisions (CHANGE-027). Primary instrument 
 **Reversible:** Yes — `tileset_meta.json` files with `edge_compatibility: "pending_spec_decision"` can be retrofitted once spec is finalized.
 
 ---
+
+## 2026-05-10 | Phase 3 | DataPipeline
+
+**Decision:** Add Golden Dataset triage system to streamline human curation. Pre-scores Tier 2 corpus with automated rubric gate, buckets sprites into A/B/C/D/E review surfaces, and provides a Flask curation UI. All golden accepts remain human-explicit.
+**Governing Rule:** Constitution Rule 5 (data provenance — every golden sprite needs human accept + manifest entry); Rule 9 (human override authority — triage is a review surface, not automated curator)
+**Alternatives Considered:** (A) Raw sprite-by-sprite review of ~50,000 sprites — impractical. (B) Fully automated acceptance at rubric threshold — violates Rule 5 and Rule 9. (C) Triage pre-scoring + human review per bucket (chosen) — reduces review burden while preserving human accept requirement for every golden entry. Generates rubric calibration data as byproduct.
+**Rationale:** 493,193 sprites in corpus — exhaustive sprite-by-sprite review is not feasible. Triage surfaces the most likely candidates (A bucket) at the top, flags anomalies (D bucket) for closer inspection, and keeps tilesets (E bucket) on a separate track pending SPEC_PENDING_032.md finalization. Rubric calibration report generated from disagreement patterns feeds back into EVALUATION_RUBRIC.md before Phase 4 training.
+**Confidence:** High
+**Risk Level:** Low — augments human curation, does not replace it. Curation log captures all decisions with rubric scores at decision time, making any future rubric recalibration auditable.
+**Reversible:** Yes
+
+---

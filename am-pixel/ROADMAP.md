@@ -183,6 +183,14 @@ Every time this document says "99/100 threshold" it means this batch pass rate. 
   - Preferred sources: commissioned sprites, community-contributed CC0 sprites, highest-quality subset of Tier 2 scrape
   - Store in `data/golden/`
   - Record every sprite in `data/golden/CONTRIBUTORS.md` with source and reviewer notes
+  - Run `tools/run_triage_scorer.py` to pre-score corpus and populate review buckets
+  - Use `tools/curation_ui.py` (http://localhost:5001) as the curation interface
+  - Review A bucket (autopass ≥85) first — highest-density path to 3,000 accepts
+  - Review D bucket (anomaly) — inspect suspicious high-scorers and pack outliers
+  - Review B bucket (borderline 70-84) to supplement if A bucket insufficient
+  - Run `tools/generate_calibration_report.py` after curation to produce rubric calibration data
+  - **Calibration report must be reviewed before Phase 4 training begins**
+  - Target: 3,000-5,000 human-accepted sprites in data/golden/
 - [ ] Golden Dataset provenance entries recorded in `data/TRAINING_PROVENANCE_MANIFEST.json` with `"tier": 1`
 
 **Paired-view detection (CHANGE-017):**
