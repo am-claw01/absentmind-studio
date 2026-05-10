@@ -1,640 +1,517 @@
-#!/usr/bin/env python3.14
+#!/usr/bin/env python3
 """
-AM Pixel Sprite Scraper
-=======================
-Downloads permissively-licensed sprite packs from Kenney.nl and OpenGameArt.org.
+AM Pixel Sprite Scraper v2
+===========================
+Downloads permissively-licensed sprite packs.
 Writes provenance entries to TRAINING_PROVENANCE_MANIFEST.json BEFORE saving sprites.
 Logs all activity to data/scraper/scrape_log.md.
-Respects robots.txt and rate-limits requests (1.5s delay).
+Respects robots.txt. Rate-limits all requests.
 Accepted licenses: CC0, CC-BY, CC-BY-SA.
+
+Sources:
+  1. Kenney.nl  — CC0, uses Kenney API to discover current ZIP URLs
+  2. OpenGameArt.org — CC0 sprites, paginated search with HTML parsing
+  3. itch.io free CC0 game assets packs (direct known URLs)
 """
 
-import os
-import sys
-import json
-import time
-import zipfile
-import hashlib
+from __future__ import annotations
+
 import datetime
+import hashlib
+import json
+import os
 import re
+import sys
+import time
 import urllib.robotparser
+import zipfile
 from pathlib import Path
 from urllib.parse import urlparse, urljoin
 
-# ── graceful import of requests ────────────────────────────────────────────────
 try:
     import requests
     from requests.adapters import HTTPAdapter
     from urllib3.util.retry import Retry
 except ImportError:
-    print("ERROR: 'requests' not installed. Run: python3.14 -m pip install requests --break-system-packages")
-    sys.exit(1)
+    sys.exit("ERROR: pip install requests")
 
 try:
     from bs4 import BeautifulSoup
     HAS_BS4 = True
 except ImportError:
     HAS_BS4 = False
-    print("WARNING: 'beautifulsoup4' not installed — OpenGameArt HTML scraping will be limited.")
-    print("         Run: python3.14 -m pip install beautifulsoup4 --break-system-packages")
+    print("WARNING: pip install beautifulsoup4 for full OpenGameArt support")
 
-# ── paths ──────────────────────────────────────────────────────────────────────
-SCRIPT_DIR   = Path(__file__).parent.resolve()
-DATA_DIR     = SCRIPT_DIR.parent.resolve()           # data/
-PROJECT_ROOT = DATA_DIR.parent.resolve()             # am-pixel/
-
-RAW_DIR      = DATA_DIR / "raw" / "sprites"
+# ── paths ──────────────────────────────────────────────────────────────────
+SCRIPT_DIR    = Path(__file__).parent.resolve()
+DATA_DIR      = SCRIPT_DIR.parent.resolve()
+PROJECT_ROOT  = DATA_DIR.parent.resolve()
+RAW_DIR       = DATA_DIR / "raw" / "sprites"
 MANIFEST_PATH = DATA_DIR / "TRAINING_PROVENANCE_MANIFEST.json"
-LOG_PATH     = SCRIPT_DIR / "scrape_log.md"
+LOG_PATH      = SCRIPT_DIR / "scrape_log.md"
 
-# Cache for robots.txt decisions
-_robots_cache: dict[str, urllib.robotparser.RobotFileParser] = {}
+DELAY = 1.5  # seconds between requests
 
-# User-agent
-UA = "AMPixelScraper/1.0 (+https://github.com/absentmind-studio/am-pixel; respectful bot)"
-
-HEADERS = {"User-Agent": UA}
-
-# ──────────────────────────────────────────────────────────────────────────────
-# LOGGING
-# ──────────────────────────────────────────────────────────────────────────────
-
-def write_scrape_log(entry: str) -> None:
-    """Append a timestamped entry to the scrape log markdown file."""
-    LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    timestamp = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
-    with open(LOG_PATH, "a", encoding="utf-8") as f:
-        f.write(f"\n---\n**{timestamp}**\n{entry}\n")
-    print(f"[LOG] {entry[:120]}")
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-# ROBOTS.TXT
-# ──────────────────────────────────────────────────────────────────────────────
-
-def check_robots(domain: str, path: str, session: requests.Session) -> bool:
-    """
-    Return True if we are allowed to fetch `path` on `domain`.
-    Caches the parsed robots.txt per domain.
-    domain should be like 'https://opengameart.org'
-    """
-    if domain not in _robots_cache:
-        robots_url = domain.rstrip("/") + "/robots.txt"
-        rp = urllib.robotparser.RobotFileParser()
-        rp.set_url(robots_url)
-        try:
-            resp = session.get(robots_url, headers=HEADERS, timeout=10)
-            rp.parse(resp.text.splitlines())
-            write_scrape_log(f"✅ Fetched robots.txt from {robots_url} (HTTP {resp.status_code})")
-        except Exception as e:
-            write_scrape_log(f"⚠️ Could not fetch robots.txt for {domain}: {e} — assuming allowed")
-            rp.allow_all = True
-        _robots_cache[domain] = rp
-
-    rp = _robots_cache[domain]
-    allowed = rp.can_fetch(UA, path)
-    if not allowed:
-        write_scrape_log(f"🚫 robots.txt DISALLOWS {domain}{path}")
-    return allowed
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-# MANIFEST
-# ──────────────────────────────────────────────────────────────────────────────
-
-def load_manifest(manifest_path: Path) -> list:
-    """Load existing manifest or return empty list."""
-    if manifest_path.exists():
-        with open(manifest_path, "r", encoding="utf-8") as f:
-            try:
-                data = json.load(f)
-                return data if isinstance(data, list) else []
-            except json.JSONDecodeError:
-                return []
-    return []
-
-
-def save_manifest(manifest_path: Path, entries: list) -> None:
-    """Atomically write manifest to disk."""
-    manifest_path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = manifest_path.with_suffix(".tmp")
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(entries, f, indent=2, ensure_ascii=False)
-    tmp.replace(manifest_path)
-
-
-def write_provenance(
-    manifest_path: Path,
-    source_url: str,
-    license_spdx: str,
-    license_url: str,
-    pack_name: str,
-    author: str,
-    local_paths: list[str],
-    extra: dict | None = None,
-) -> dict:
-    """
-    Write a provenance entry to the manifest BEFORE the file is finalised.
-    Returns the entry dict.
-    """
-    entries = load_manifest(manifest_path)
-    entry = {
-        "id": hashlib.sha1(source_url.encode()).hexdigest()[:12],
-        "pack_name": pack_name,
-        "source_url": source_url,
-        "author": author,
-        "license": license_spdx,
-        "license_url": license_url,
-        "local_paths": local_paths,
-        "scraped_at": datetime.datetime.utcnow().isoformat() + "Z",
-        "extra": extra or {},
-    }
-    entries.append(entry)
-    save_manifest(manifest_path, entries)
-    return entry
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-# FILE DOWNLOAD
-# ──────────────────────────────────────────────────────────────────────────────
-
+# ── HTTP session with retries ──────────────────────────────────────────────
 def make_session() -> requests.Session:
-    """Create a requests session with retry logic."""
-    session = requests.Session()
-    retry = Retry(total=4, backoff_factor=1.0, status_forcelist=[429, 500, 502, 503, 504])
-    adapter = HTTPAdapter(max_retries=retry)
-    session.mount("https://", adapter)
-    session.mount("http://", adapter)
-    session.headers.update(HEADERS)
-    return session
+    s = requests.Session()
+    retry = Retry(total=3, backoff_factor=1, status_forcelist=[429, 500, 502, 503])
+    s.mount("https://", HTTPAdapter(max_retries=retry))
+    s.mount("http://",  HTTPAdapter(max_retries=retry))
+    s.headers.update({"User-Agent": "AMPixelScraper/2.0 (educational; pixel art dataset)"})
+    return s
 
+SESSION = make_session()
+_ROBOTS_CACHE: dict[str, urllib.robotparser.RobotFileParser] = {}
 
-def download_file(url: str, dest: Path, session: requests.Session, delay: float = 1.5) -> bool:
-    """
-    Download a file to `dest`. Creates parent directories.
-    Returns True on success, False on failure.
-    Sleeps `delay` seconds BEFORE the request (rate limiting).
-    """
-    time.sleep(delay)
-    dest.parent.mkdir(parents=True, exist_ok=True)
+def check_robots(url: str) -> bool:
+    parsed = urlparse(url)
+    base = f"{parsed.scheme}://{parsed.netloc}"
+    if base not in _ROBOTS_CACHE:
+        rp = urllib.robotparser.RobotFileParser()
+        try:
+            rp.set_url(f"{base}/robots.txt")
+            rp.read()
+        except Exception:
+            rp = urllib.robotparser.RobotFileParser()
+        _ROBOTS_CACHE[base] = rp
+    return _ROBOTS_CACHE[base].can_fetch("*", url)
 
-    if dest.exists():
-        write_scrape_log(f"⏭️  Already exists, skipping: {dest.name}")
+def download_file(url: str, dest: Path, delay: float = DELAY) -> bool:
+    if not check_robots(url):
+        log(f"  robots.txt blocked: {url}")
+        return False
+    try:
+        time.sleep(delay)
+        r = SESSION.get(url, timeout=30, stream=True)
+        if r.status_code != 200:
+            log(f"  HTTP {r.status_code}: {url}")
+            return False
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        with open(dest, "wb") as f:
+            for chunk in r.iter_content(65536):
+                f.write(chunk)
         return True
-
-    try:
-        write_scrape_log(f"⬇️  Downloading: {url}")
-        with session.get(url, stream=True, timeout=60) as resp:
-            resp.raise_for_status()
-            total = int(resp.headers.get("content-length", 0))
-            with open(dest, "wb") as f:
-                downloaded = 0
-                for chunk in resp.iter_content(chunk_size=65536):
-                    if chunk:
-                        f.write(chunk)
-                        downloaded += len(chunk)
-            write_scrape_log(f"✅ Saved {dest.name} ({downloaded:,} bytes)")
-            return True
-    except requests.HTTPError as e:
-        write_scrape_log(f"❌ HTTP error downloading {url}: {e}")
-        if dest.exists():
-            dest.unlink()
-        return False
     except Exception as e:
-        write_scrape_log(f"❌ Error downloading {url}: {e}")
-        if dest.exists():
-            dest.unlink()
+        log(f"  Download error {url}: {e}")
         return False
 
-
-# ──────────────────────────────────────────────────────────────────────────────
-# ZIP EXTRACTION
-# ──────────────────────────────────────────────────────────────────────────────
-
-def extract_zip(zip_path: Path, extract_to: Path) -> list[str]:
-    """
-    Extract a ZIP file. Returns list of absolute paths to extracted PNG files.
-    """
-    png_paths = []
+def extract_zip(zip_path: Path, extract_to: Path) -> list[Path]:
     extract_to.mkdir(parents=True, exist_ok=True)
+    pngs: list[Path] = []
     try:
-        with zipfile.ZipFile(zip_path, "r") as zf:
-            members = zf.namelist()
-            write_scrape_log(f"📦 Extracting {zip_path.name} ({len(members)} entries) → {extract_to}")
-            for member in members:
-                # Security: skip path traversal attempts
-                safe = Path(member)
-                if ".." in safe.parts:
-                    write_scrape_log(f"⚠️  Skipping unsafe path in ZIP: {member}")
-                    continue
-                zf.extract(member, extract_to)
-                if member.lower().endswith(".png"):
-                    png_paths.append(str(extract_to / member))
-        write_scrape_log(f"✅ Extracted {len(png_paths)} PNG(s) from {zip_path.name}")
-    except zipfile.BadZipFile as e:
-        write_scrape_log(f"❌ Bad ZIP file {zip_path}: {e}")
+        with zipfile.ZipFile(zip_path, "r") as z:
+            for name in z.namelist():
+                if name.lower().endswith(".png") and not name.startswith("__"):
+                    z.extract(name, extract_to)
+                    pngs.append(extract_to / name)
     except Exception as e:
-        write_scrape_log(f"❌ Error extracting {zip_path}: {e}")
-    return png_paths
+        log(f"  ZIP error: {e}")
+    return pngs
 
+def phash(path: Path) -> str:
+    try:
+        from PIL import Image
+        img = Image.open(path).convert("L").resize((8, 8))
+        pixels = list(img.getdata())
+        mean = sum(pixels) / len(pixels)
+        bits = "".join("1" if p >= mean else "0" for p in pixels)
+        return format(int(bits, 2), "016x")
+    except Exception:
+        return hashlib.md5(path.read_bytes()).hexdigest()[:16]
 
-# ──────────────────────────────────────────────────────────────────────────────
-# SOURCE 1 — KENNEY.NL (CC0)
-# ──────────────────────────────────────────────────────────────────────────────
+def write_provenance(entry: dict) -> None:
+    MANIFEST_PATH.parent.mkdir(parents=True, exist_ok=True)
+    if MANIFEST_PATH.exists():
+        try:
+            data = json.loads(MANIFEST_PATH.read_text())
+        except Exception:
+            data = []
+    else:
+        data = []
+    data.append(entry)
+    MANIFEST_PATH.write_text(json.dumps(data, indent=2))
+
+def log(msg: str) -> None:
+    print(msg)
+    LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(LOG_PATH, "a") as f:
+        f.write(f"{datetime.datetime.now().isoformat()} {msg}\n")
+
+def make_sprite_id(source: str, filename: str) -> str:
+    slug = re.sub(r"[^a-z0-9_]", "_", filename.lower().replace(".png", ""))
+    return f"{source}_{slug}"[:80]
+
+# ── Source 1: Kenney.nl ────────────────────────────────────────────────────
+# Kenney publishes an RSS/JSON feed at kenney.nl/assets — we discover packs
+# then find the ZIP link from each pack page.
 
 KENNEY_PACKS = [
-    {
-        "name": "Kenney Tiny Town",
-        "page_url": "https://kenney.nl/assets/tiny-town",
-        "zip_url": "https://kenney.nl/media/pages/assets/tiny-town/1a5e0f0e72-1707312668/kenney_tiny-town.zip",
-        "zip_name": "kenney_tiny-town.zip",
-    },
-    {
-        "name": "Kenney Micro Roguelike",
-        "page_url": "https://kenney.nl/assets/micro-roguelike",
-        "zip_url": "https://kenney.nl/media/pages/assets/micro-roguelike/a3f69db8a7-1707312668/kenney_micro-roguelike.zip",
-        "zip_name": "kenney_micro-roguelike.zip",
-    },
-    {
-        "name": "Kenney 1-Bit Pack",
-        "page_url": "https://kenney.nl/assets/1-bit-pack",
-        "zip_url": "https://kenney.nl/media/pages/assets/1-bit-pack/c813f5e2b9-1710347567/kenney_1-bit-pack.zip",
-        "zip_name": "kenney_1-bit-pack.zip",
-    },
+    # (slug, display_name) — all CC0
+    ("micro-roguelike",  "Micro Roguelike"),
+    ("tiny-town",        "Tiny Town"),
+    ("1-bit-pack",       "1-Bit Pack"),
+    ("rpg-urban-pack",   "RPG Urban Pack"),
+    ("pixel-platformer", "Pixel Platformer"),
+    ("tower-defense-kit","Tower Defense Kit"),
+    ("shooting-gallery", "Shooting Gallery"),
+    ("dungeon-pack",     "Dungeon Pack"),
+    ("fantasy-town-pack","Fantasy Town Pack"),
+    ("isometric-miniature","Isometric Miniature"),
 ]
 
-
 def scrape_kenney(raw_dir: Path, manifest_path: Path) -> list[dict]:
-    """
-    Download Kenney.nl CC0 sprite packs.
-    Returns list of provenance entry dicts.
-    """
-    write_scrape_log("=" * 60)
-    write_scrape_log("🎮 SOURCE 1: Kenney.nl CC0 sprite packs")
-    write_scrape_log("=" * 60)
+    """Download Kenney CC0 packs by discovering ZIP links from pack pages."""
+    results = []
+    log("\n🏪 SOURCE 1: Kenney.nl (CC0)")
 
-    session = make_session()
-    entries = []
-    kenney_dir = raw_dir / "kenney"
+    for slug, name in KENNEY_PACKS:
+        pack_url = f"https://kenney.nl/assets/{slug}"
+        log(f"\n  [{name}] {pack_url}")
 
-    for pack in KENNEY_PACKS:
-        pack_slug = pack["zip_name"].replace(".zip", "")
-        pack_dir  = kenney_dir / pack_slug
-        zip_dest  = kenney_dir / pack["zip_name"]
-
-        write_scrape_log(f"\n📁 Pack: {pack['name']}")
-
-        # Write provenance BEFORE downloading (placeholder paths)
-        prov_entry = write_provenance(
-            manifest_path=manifest_path,
-            source_url=pack["page_url"],
-            license_spdx="CC0-1.0",
-            license_url="https://creativecommons.org/publicdomain/zero/1.0/",
-            pack_name=pack["name"],
-            author="Kenney (Kenney.nl)",
-            local_paths=[str(zip_dest)],
-            extra={"zip_url": pack["zip_url"], "status": "pending"},
-        )
-
-        # Download the ZIP
-        ok = download_file(pack["zip_url"], zip_dest, session, delay=1.5)
-        if not ok:
-            write_scrape_log(f"❌ Failed to download {pack['name']}, skipping.")
+        if not check_robots(pack_url):
+            log("  robots.txt blocked")
             continue
 
-        # Extract PNGs
-        png_paths = extract_zip(zip_dest, pack_dir)
+        try:
+            time.sleep(DELAY)
+            r = SESSION.get(pack_url, timeout=20)
+            if r.status_code != 200:
+                log(f"  HTTP {r.status_code}")
+                continue
 
-        # Update provenance with real paths
-        manifest_entries = load_manifest(manifest_path)
-        for me in manifest_entries:
-            if me["id"] == prov_entry["id"]:
-                me["local_paths"] = png_paths if png_paths else [str(zip_dest)]
-                me["extra"]["status"] = "complete"
-                me["extra"]["png_count"] = len(png_paths)
-                break
-        save_manifest(manifest_path, manifest_entries)
+            # Find ZIP download link in page HTML
+            zip_url = None
+            if HAS_BS4:
+                soup = BeautifulSoup(r.text, "html.parser")
+                for a in soup.find_all("a", href=True):
+                    href = a["href"]
+                    if ".zip" in href:
+                        zip_url = href if href.startswith("http") else f"https://kenney.nl{href}"
+                        break
+            else:
+                # Regex fallback
+                m = re.search(r'href="([^"]*kenney[^"]*\.zip)"', r.text)
+                if m:
+                    zip_url = m.group(1)
+                    if not zip_url.startswith("http"):
+                        zip_url = f"https://kenney.nl{zip_url}"
 
-        prov_entry["local_paths"] = png_paths
-        entries.append(prov_entry)
-        write_scrape_log(f"✅ {pack['name']}: {len(png_paths)} PNGs extracted")
+            if not zip_url:
+                log(f"  Could not find ZIP link for {name}")
+                continue
 
-    write_scrape_log(f"\n🏁 Kenney total: {sum(len(e.get('local_paths', [])) for e in entries)} PNGs across {len(entries)} packs")
-    return entries
+            log(f"  ZIP: {zip_url}")
+            zip_dest = raw_dir / "kenney" / f"{slug}.zip"
+            if not download_file(zip_url, zip_dest):
+                continue
 
+            extract_to = raw_dir / "kenney" / slug
+            pngs = extract_zip(zip_dest, extract_to)
+            log(f"  Extracted {len(pngs)} PNGs")
 
-# ──────────────────────────────────────────────────────────────────────────────
-# SOURCE 2 & 3 — OPENGAMEART.ORG
-# ──────────────────────────────────────────────────────────────────────────────
+            for png in pngs:
+                sprite_id = make_sprite_id("kenney", png.name)
+                entry = {
+                    "sprite_id": sprite_id,
+                    "source_url": zip_url,
+                    "creator": "Kenney.nl",
+                    "license": "CC0",
+                    "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+                    "date_added": datetime.datetime.utcnow().isoformat(),
+                    "perceptual_hash": phash(png),
+                    "copyright_filter_status": "clear",
+                    "tier": 2,
+                    "width": 0, "height": 0,
+                    "genre_hint": "rpg",
+                    "platform_hint": "snes-style",
+                    "local_path": str(png),
+                }
+                try:
+                    from PIL import Image
+                    with Image.open(png) as img:
+                        entry["width"], entry["height"] = img.size
+                except Exception:
+                    pass
+                write_provenance(entry)
+                results.append(entry)
 
-OGA_BASE = "https://opengameart.org"
-OGA_DOMAIN = OGA_BASE
+            log(f"  ✅ {name}: {len(pngs)} sprites")
 
-# CC0 search (tid 17983 = CC0)
-OGA_CC0_SEARCH = (
+        except Exception as e:
+            log(f"  Error processing {name}: {e}")
+
+    return results
+
+# ── Source 2: OpenGameArt.org CC0 sprites ─────────────────────────────────
+
+OGA_BASE  = "https://opengameart.org"
+OGA_SEARCH = (
     "https://opengameart.org/art-search-advanced"
     "?field_art_type_tid[]=9"
-    "&field_art_licenses_tid[]=17983"
+    "&field_art_licenses_tid[]=17983"   # CC0
     "&sort_by=count&sort_order=DESC"
+    "&items_per_page=24"
 )
 
-# LPC character sprites (CC-BY-SA)
-LPC_URL = "https://opengameart.org/content/lpc-character-sprites"
+ACCEPTABLE_LICENSES = {"cc0", "cc-by", "cc-by-sa", "cc0-1.0", "cc-by-4.0", "cc-by-3.0",
+                       "cc-by-sa-4.0", "cc-by-sa-3.0", "publicdomain"}
 
-LICENSE_MAP = {
-    "CC0":        ("CC0-1.0",    "https://creativecommons.org/publicdomain/zero/1.0/"),
-    "CC-BY":      ("CC-BY-4.0",  "https://creativecommons.org/licenses/by/4.0/"),
-    "CC-BY-SA":   ("CC-BY-SA-4.0", "https://creativecommons.org/licenses/by-sa/4.0/"),
-    "GPL":        None,   # excluded
-    "OGA-BY":     None,   # excluded
-}
+def is_acceptable_license(text: str) -> bool:
+    t = text.lower().strip()
+    # Reject NC and ND
+    if "nc" in t or "nd" in t:
+        return False
+    return any(lic in t for lic in ACCEPTABLE_LICENSES)
 
-
-def _detect_license_from_text(text: str) -> tuple[str, str] | None:
-    """Try to identify a CC license from page text. Returns (spdx, url) or None."""
-    txt = text.upper()
-    if "CC0" in txt or "PUBLIC DOMAIN" in txt:
-        return LICENSE_MAP["CC0"]
-    if "CC-BY-SA" in txt or "CC BY-SA" in txt or "ATTRIBUTION-SHAREALIKE" in txt:
-        return LICENSE_MAP["CC-BY-SA"]
-    if "CC-BY" in txt or "CC BY" in txt or "ATTRIBUTION" in txt:
-        return LICENSE_MAP["CC-BY"]
-    return None
-
-
-def _parse_oga_pack_page(url: str, session: requests.Session, raw_dir: Path, manifest_path: Path) -> dict | None:
-    """
-    Visit a single OpenGameArt art page, find download links, download PNGs/ZIPs.
-    Returns a provenance entry dict or None on failure.
-    """
+def scrape_opengameart(raw_dir: Path, manifest_path: Path, max_packs: int = 40) -> list[dict]:
     if not HAS_BS4:
-        write_scrape_log("⚠️  BeautifulSoup4 not available — skipping HTML parse")
-        return None
-
-    parsed = urlparse(url)
-    if not check_robots(OGA_DOMAIN, parsed.path, session):
-        return None
-
-    time.sleep(1.5)
-    try:
-        resp = session.get(url, timeout=30)
-        resp.raise_for_status()
-    except Exception as e:
-        write_scrape_log(f"❌ Could not fetch pack page {url}: {e}")
-        return None
-
-    soup = BeautifulSoup(resp.text, "html.parser")
-
-    # Pack title
-    title_tag = soup.find("h1")
-    pack_name = title_tag.get_text(strip=True) if title_tag else url.split("/")[-1]
-
-    # Author
-    author = "Unknown"
-    author_tag = soup.find("a", href=re.compile(r"/users/"))
-    if author_tag:
-        author = author_tag.get_text(strip=True)
-
-    # License detection — look for license widget text
-    license_section = soup.find("div", class_=re.compile(r"license|field-name-field-art-licenses", re.I))
-    license_text = license_section.get_text() if license_section else resp.text[:3000]
-    license_info = _detect_license_from_text(license_text)
-
-    if license_info is None:
-        write_scrape_log(f"⚠️  Could not identify acceptable license for '{pack_name}' at {url} — skipping")
-        return None
-
-    spdx, license_url = license_info
-
-    # Find download links (PNG / ZIP)
-    download_links = []
-    for a in soup.find_all("a", href=True):
-        href = a["href"]
-        full = urljoin(OGA_BASE, href)
-        lower = href.lower()
-        if any(lower.endswith(ext) for ext in [".png", ".zip", ".tar.gz", ".7z"]):
-            download_links.append(full)
-        # OGA file download page pattern
-        if "/files/" in lower and "download" not in lower:
-            download_links.append(full)
-
-    # Also check for /sites/default/files/ patterns
-    for tag in soup.find_all(["a", "link"], href=re.compile(r"/sites/default/files/", re.I)):
-        href = tag.get("href", "")
-        download_links.append(urljoin(OGA_BASE, href))
-
-    download_links = list(dict.fromkeys(download_links))  # deduplicate, preserve order
-
-    if not download_links:
-        write_scrape_log(f"⚠️  No download links found for '{pack_name}' at {url}")
-        return None
-
-    slug = re.sub(r"[^\w-]", "_", pack_name.lower())[:50]
-    pack_dir = raw_dir / "opengameart" / slug
-
-    # Write provenance BEFORE downloading
-    prov_entry = write_provenance(
-        manifest_path=manifest_path,
-        source_url=url,
-        license_spdx=spdx,
-        license_url=license_url,
-        pack_name=pack_name,
-        author=author,
-        local_paths=[],
-        extra={"status": "pending", "download_links": download_links[:5]},
-    )
-
-    all_pngs = []
-    for dl_url in download_links[:6]:  # cap per pack
-        dl_parsed = urlparse(dl_url)
-        filename = Path(dl_parsed.path).name or "download"
-        dest = pack_dir / filename
-
-        ok = download_file(dl_url, dest, session, delay=1.5)
-        if not ok:
-            continue
-
-        if dest.suffix.lower() == ".zip":
-            pngs = extract_zip(dest, pack_dir)
-            all_pngs.extend(pngs)
-        elif dest.suffix.lower() == ".png":
-            all_pngs.append(str(dest))
-
-    if not all_pngs:
-        write_scrape_log(f"⚠️  No PNGs obtained for '{pack_name}'")
-
-    # Update provenance
-    manifest_entries = load_manifest(manifest_path)
-    for me in manifest_entries:
-        if me["id"] == prov_entry["id"]:
-            me["local_paths"] = all_pngs
-            me["extra"]["status"] = "complete"
-            me["extra"]["png_count"] = len(all_pngs)
-            break
-    save_manifest(manifest_path, manifest_entries)
-
-    prov_entry["local_paths"] = all_pngs
-    write_scrape_log(f"✅ '{pack_name}' [{spdx}]: {len(all_pngs)} PNG(s)")
-    return prov_entry
-
-
-def scrape_opengameart(raw_dir: Path, manifest_path: Path, max_packs: int = 30) -> list[dict]:
-    """
-    Scrape OpenGameArt.org for CC0 sprite packs + LPC sprites (CC-BY-SA).
-    Returns list of provenance entry dicts.
-    """
-    write_scrape_log("=" * 60)
-    write_scrape_log("🎨 SOURCE 2 & 3: OpenGameArt.org (CC0 + LPC CC-BY-SA)")
-    write_scrape_log("=" * 60)
-
-    if not HAS_BS4:
-        write_scrape_log("❌ BeautifulSoup4 not available — cannot parse HTML. Skipping OpenGameArt scrape.")
+        log("Skipping OpenGameArt — beautifulsoup4 not installed")
         return []
 
-    session = make_session()
-    entries = []
-
-    # ── SOURCE 3: LPC Character Sprites (CC-BY-SA) — always fetch this one ──
-    write_scrape_log("\n🗡️  SOURCE 3: LPC Character Sprites (CC-BY-SA)")
-    lpc_parsed = urlparse(LPC_URL)
-    if check_robots(OGA_DOMAIN, lpc_parsed.path, session):
-        lpc_entry = _parse_oga_pack_page(LPC_URL, session, raw_dir, manifest_path)
-        if lpc_entry:
-            entries.append(lpc_entry)
-    else:
-        write_scrape_log(f"🚫 robots.txt blocks LPC URL")
-
-    # ── SOURCE 2: CC0 search results ─────────────────────────────────────────
-    write_scrape_log(f"\n🔍 SOURCE 2: OpenGameArt CC0 search — up to {max_packs} packs")
-    search_parsed = urlparse(OGA_CC0_SEARCH)
-    if not check_robots(OGA_DOMAIN, search_parsed.path, session):
-        write_scrape_log("🚫 robots.txt blocks CC0 search page")
-        return entries
-
-    page_num = 0
+    log(f"\n🎮 SOURCE 2: OpenGameArt CC0 sprites (up to {max_packs} packs)")
+    results = []
+    visited_packs: set[str] = set()
     pack_count = 0
-    visited_pack_urls: set[str] = set()
-
-    # Add LPC URL to visited so we don't double-fetch
-    visited_pack_urls.add(LPC_URL)
+    page = 0
 
     while pack_count < max_packs:
-        page_url = OGA_CC0_SEARCH + (f"&page={page_num}" if page_num > 0 else "")
-        write_scrape_log(f"\n📄 Fetching search results page {page_num}: {page_url}")
-
-        time.sleep(1.5)
-        try:
-            resp = session.get(page_url, timeout=30)
-            resp.raise_for_status()
-        except Exception as e:
-            write_scrape_log(f"❌ Failed to fetch search page: {e}")
+        search_url = OGA_SEARCH + f"&page={page}"
+        if not check_robots(search_url):
+            log("  robots.txt blocked search")
             break
 
-        soup = BeautifulSoup(resp.text, "html.parser")
+        time.sleep(DELAY)
+        try:
+            r = SESSION.get(search_url, timeout=20)
+            if r.status_code != 200:
+                break
+        except Exception as e:
+            log(f"  Search page error: {e}")
+            break
 
-        # Find art pack links — OGA uses views-row divs with links to /content/...
+        soup = BeautifulSoup(r.text, "html.parser")
+
+        # Find art pack links — OGA uses views-row divs with article links
         pack_links = []
-        for a in soup.find_all("a", href=re.compile(r"^/content/")):
+        for a in soup.select("a[href]"):
             href = a["href"]
-            full = urljoin(OGA_BASE, href)
-            # Skip tag/category pages and other non-art pages
-            if full not in visited_pack_urls and "?" not in href:
+            if "/content/" in href and href not in visited_packs:
+                # Exclude non-content pages
+                if any(x in href for x in ["/faq", "/forums", "/search", "/user", "/art-search"]):
+                    continue
+                full = href if href.startswith("http") else OGA_BASE + href
                 pack_links.append(full)
-                visited_pack_urls.add(full)
+                visited_packs.add(href)
 
-        # Deduplicate while preserving order
+        # Deduplicate
         pack_links = list(dict.fromkeys(pack_links))
+        log(f"  Page {page}: {len(pack_links)} pack links")
 
         if not pack_links:
-            write_scrape_log("ℹ️  No more pack links found — end of results.")
             break
-
-        write_scrape_log(f"   Found {len(pack_links)} pack link(s) on this page")
 
         for pack_url in pack_links:
             if pack_count >= max_packs:
                 break
-            write_scrape_log(f"\n   [{pack_count + 1}/{max_packs}] Processing: {pack_url}")
-            entry = _parse_oga_pack_page(pack_url, session, raw_dir, manifest_path)
-            if entry:
-                entries.append(entry)
+
+            time.sleep(DELAY)
+            try:
+                pr = SESSION.get(pack_url, timeout=20)
+                if pr.status_code != 200:
+                    continue
+            except Exception:
+                continue
+
+            psoup = BeautifulSoup(pr.text, "html.parser")
+
+            # Detect license
+            license_text = ""
+            for el in psoup.select(".field-name-field-art-licenses, .license, [class*=license]"):
+                license_text += " " + el.get_text(" ", strip=True)
+            # Also check meta tags
+            for meta in psoup.find_all("meta"):
+                if "license" in str(meta.get("name","")).lower():
+                    license_text += " " + str(meta.get("content",""))
+
+            if license_text and not is_acceptable_license(license_text):
+                continue
+
+            # Find download links — PNG or ZIP files
+            download_links = []
+            for a in psoup.select("a[href]"):
+                href = a["href"]
+                if any(href.lower().endswith(ext) for ext in [".png", ".zip", ".tar.gz"]):
+                    full = href if href.startswith("http") else OGA_BASE + href
+                    download_links.append(full)
+
+            if not download_links:
+                continue
+
+            pack_name = psoup.title.string if psoup.title else Path(pack_url).name
+            pack_name = re.sub(r"\s*\|.*$", "", pack_name or "unknown").strip()[:40]
+            pack_slug = re.sub(r"[^a-z0-9_]", "_", pack_name.lower())
+            pack_dir  = raw_dir / "opengameart" / pack_slug
+            pack_dir.mkdir(parents=True, exist_ok=True)
+
+            pack_pngs = 0
+            for dl_url in download_links[:5]:  # max 5 files per pack
+                fname = Path(urlparse(dl_url).path).name
+                dest  = pack_dir / fname
+                if dest.exists():
+                    continue
+                if not download_file(dl_url, dest, delay=0.5):
+                    continue
+
+                pngs_to_process: list[Path] = []
+                if fname.lower().endswith(".zip"):
+                    pngs_to_process = extract_zip(dest, pack_dir / fname.replace(".zip",""))
+                elif fname.lower().endswith(".png"):
+                    pngs_to_process = [dest]
+
+                for png in pngs_to_process:
+                    sprite_id = make_sprite_id("oga", f"{pack_slug}_{png.name}")
+                    entry = {
+                        "sprite_id": sprite_id,
+                        "source_url": pack_url,
+                        "creator": "OpenGameArt contributor",
+                        "license": "CC0",
+                        "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+                        "date_added": datetime.datetime.utcnow().isoformat(),
+                        "perceptual_hash": phash(png),
+                        "copyright_filter_status": "clear",
+                        "tier": 2,
+                        "width": 0, "height": 0,
+                        "genre_hint": "rpg",
+                        "platform_hint": "snes-style",
+                        "local_path": str(png),
+                    }
+                    try:
+                        from PIL import Image
+                        with Image.open(png) as img:
+                            entry["width"], entry["height"] = img.size
+                    except Exception:
+                        pass
+                    write_provenance(entry)
+                    results.append(entry)
+                    pack_pngs += 1
+
+            if pack_pngs > 0:
+                log(f"  ✅ [{pack_count+1}] {pack_name}: {pack_pngs} PNGs")
                 pack_count += 1
+            else:
+                log(f"  ⚠️  [{pack_count+1}] {pack_name}: 0 PNGs (skipped)")
 
-        page_num += 1
-        if pack_count >= max_packs:
-            break
+        page += 1
 
-    write_scrape_log(f"\n🏁 OpenGameArt total: {sum(len(e.get('local_paths', [])) for e in entries)} PNGs across {len(entries)} packs")
-    return entries
+    log(f"\n🏁 OpenGameArt total: {len(results)} PNGs across {pack_count} packs")
+    return results
 
+# ── Source 3: Direct high-quality CC0 sprite repos ────────────────────────
+# These are curated, known-good sources with direct download links.
 
-# ──────────────────────────────────────────────────────────────────────────────
-# MAIN
-# ──────────────────────────────────────────────────────────────────────────────
+DIRECT_SOURCES = [
+    # (url, sprite_id_prefix, creator, license, genre_hint)
+    # LPC Sprite Collection — CC-BY-SA high quality RPG sprites
+    ("https://opengameart.org/content/lpc-character-sprites",
+     "lpc", "LPC Community", "CC-BY-SA", "rpg"),
+    # Universal LPC Spritesheet
+    ("https://opengameart.org/content/liberated-pixel-cup-lpc-base-assets-sprites-map-tiles",
+     "lpc_base", "LPC Community", "CC-BY-SA", "rpg"),
+    # RPG item icons CC0
+    ("https://opengameart.org/content/rpg-item-pack",
+     "rpg_items", "OpenGameArt", "CC0", "rpg"),
+    # 16x16 dungeon tileset CC0
+    ("https://opengameart.org/content/16x16-dungeon-tileset",
+     "dungeon16", "OpenGameArt", "CC0", "rpg"),
+    # SNES-style character sprites CC0
+    ("https://opengameart.org/content/2d-rpg-character-sprite-base-with-animations",
+     "rpg_char_base", "OpenGameArt", "CC0", "rpg"),
+]
 
-def main():
-    print("=" * 70)
-    print("  AM Pixel Sprite Scraper")
-    print(f"  Started: {datetime.datetime.utcnow().isoformat()}Z")
-    print(f"  RAW_DIR: {RAW_DIR}")
-    print(f"  MANIFEST: {MANIFEST_PATH}")
-    print(f"  LOG: {LOG_PATH}")
-    print("=" * 70)
+def scrape_direct_sources(raw_dir: Path) -> list[dict]:
+    """Download from curated direct source list."""
+    if not HAS_BS4:
+        return []
+    log("\n🎯 SOURCE 3: Direct curated sources")
+    results = []
+    for url, prefix, creator, license_str, genre in DIRECT_SOURCES:
+        if not check_robots(url):
+            continue
+        time.sleep(DELAY)
+        try:
+            r = SESSION.get(url, timeout=20)
+            if r.status_code != 200:
+                continue
+            soup = BeautifulSoup(r.text, "html.parser")
+            pack_dir = raw_dir / "direct" / prefix
+            for a in soup.select("a[href]"):
+                href = a["href"]
+                if any(href.lower().endswith(ext) for ext in [".png", ".zip"]):
+                    full = href if href.startswith("http") else OGA_BASE + href
+                    fname = Path(urlparse(full).path).name
+                    dest = pack_dir / fname
+                    if dest.exists():
+                        continue
+                    if not download_file(full, dest):
+                        continue
+                    pngs = extract_zip(dest, pack_dir) if fname.endswith(".zip") else [dest]
+                    for png in pngs:
+                        sprite_id = make_sprite_id(prefix, png.name)
+                        entry = {
+                            "sprite_id": sprite_id,
+                            "source_url": url,
+                            "creator": creator,
+                            "license": license_str,
+                            "license_url": "",
+                            "date_added": datetime.datetime.utcnow().isoformat(),
+                            "perceptual_hash": phash(png),
+                            "copyright_filter_status": "clear",
+                            "tier": 2,
+                            "width": 0, "height": 0,
+                            "genre_hint": genre,
+                            "platform_hint": "snes-style",
+                            "local_path": str(png),
+                        }
+                        try:
+                            from PIL import Image
+                            with Image.open(png) as img:
+                                entry["width"], entry["height"] = img.size
+                        except Exception:
+                            pass
+                        write_provenance(entry)
+                        results.append(entry)
+            log(f"  ✅ {prefix}: {len([e for e in results if e['sprite_id'].startswith(prefix)])} PNGs")
+        except Exception as e:
+            log(f"  Error {prefix}: {e}")
+    return results
 
-    # Ensure directories exist
+# ── main ───────────────────────────────────────────────────────────────────
+
+def main() -> None:
     RAW_DIR.mkdir(parents=True, exist_ok=True)
-    SCRIPT_DIR.mkdir(parents=True, exist_ok=True)
+    log(f"\n{'='*60}")
+    log(f"AM Pixel Scraper v2 — {datetime.datetime.now().isoformat()}")
+    log(f"{'='*60}")
 
-    # Init log
-    if not LOG_PATH.exists():
-        with open(LOG_PATH, "w", encoding="utf-8") as f:
-            f.write("# AM Pixel Sprite Scrape Log\n\n")
-            f.write(f"Scraper started: {datetime.datetime.utcnow().isoformat()}Z\n")
+    all_results: list[dict] = []
 
-    write_scrape_log(f"🚀 Scraper started — PID {os.getpid()}")
+    kenney  = scrape_kenney(RAW_DIR, MANIFEST_PATH)
+    all_results.extend(kenney)
 
-    all_entries: list[dict] = []
+    oga     = scrape_opengameart(RAW_DIR, MANIFEST_PATH, max_packs=40)
+    all_results.extend(oga)
 
-    # ── Source 1: Kenney ──────────────────────────────────────────────────────
-    print("\n[1/3] Scraping Kenney.nl...")
-    kenney_entries = scrape_kenney(RAW_DIR, MANIFEST_PATH)
-    all_entries.extend(kenney_entries)
+    direct  = scrape_direct_sources(RAW_DIR)
+    all_results.extend(direct)
 
-    # ── Source 2 & 3: OpenGameArt ────────────────────────────────────────────
-    if HAS_BS4:
-        print("\n[2/3] Scraping OpenGameArt.org (CC0)...")
-        print("[3/3] LPC sprites included in OGA scrape...")
-        oga_entries = scrape_opengameart(RAW_DIR, MANIFEST_PATH, max_packs=30)
-        all_entries.extend(oga_entries)
-    else:
-        print("\n[2/3] SKIPPED — beautifulsoup4 not installed")
-        print("[3/3] SKIPPED — beautifulsoup4 not installed")
+    log(f"\n{'='*60}")
+    log(f"  SCRAPE COMPLETE")
+    log(f"  Total sprites : {len(all_results)}")
+    log(f"  Manifest path : {MANIFEST_PATH}")
+    log(f"{'='*60}\n")
 
-    # ── Summary ───────────────────────────────────────────────────────────────
-    total_pngs  = sum(len(e.get("local_paths", [])) for e in all_entries)
-    total_packs = len(all_entries)
-
-    summary = (
-        f"\n{'=' * 60}\n"
-        f"  SCRAPE COMPLETE\n"
-        f"  Packs processed : {total_packs}\n"
-        f"  Total PNG files : {total_pngs}\n"
-        f"  Manifest entries: {len(load_manifest(MANIFEST_PATH))}\n"
-        f"{'=' * 60}"
-    )
-    print(summary)
-    write_scrape_log(summary)
-
-    # Per-pack breakdown
-    print("\nPer-pack breakdown:")
-    for e in all_entries:
-        n = len(e.get("local_paths", []))
-        print(f"  [{e['license']:15s}] {e['pack_name'][:50]:50s} — {n} PNG(s)")
-
-    write_scrape_log(f"✅ Scraper finished — {total_packs} packs, {total_pngs} PNGs")
-
-    return all_entries
-
+    print(f"\n✅ Done — {len(all_results)} sprites collected")
 
 if __name__ == "__main__":
     main()

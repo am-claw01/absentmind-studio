@@ -1,0 +1,66 @@
+[
+  {
+    "name": "pillow_shading",
+    "bad_path": "data/antipatterns/labeled/pillow_shading_bad.png",
+    "correct_path": "data/antipatterns/labeled/pillow_shading_correct.png",
+    "width": 16,
+    "height": 24,
+    "description": "Circular gradient shading (bad) vs flat pixel regions with hue ramp (correct)"
+  },
+  {
+    "name": "color_banding",
+    "bad_path": "data/antipatterns/labeled/color_banding_bad.png",
+    "correct_path": "data/antipatterns/labeled/color_banding_correct.png",
+    "width": 16,
+    "height": 24,
+    "description": "Grey brightness bands without hue shift (bad) vs hue-shifted ramp (correct)"
+  },
+  {
+    "name": "pure_black_outline",
+    "bad_path": "data/antipatterns/labeled/pure_black_outline_bad.png",
+    "correct_path": "data/antipatterns/labeled/pure_black_outline_correct.png",
+    "width": 16,
+    "height": 24,
+    "description": "Pure #000000 outline (bad) vs darkened local-colour outline (correct)"
+  },
+  {
+    "name": "random_dithering",
+    "bad_path": "data/antipatterns/labeled/random_dithering_bad.png",
+    "correct_path": "data/antipatterns/labeled/random_dithering_correct.png",
+    "width": 16,
+    "height": 24,
+    "description": "Random noise pixels (bad) vs ordered 2-colour checkerboard (correct)"
+  },
+  {
+    "name": "palette_bloat",
+    "bad_path": "data/antipatterns/labeled/palette_bloat_bad.png",
+    "correct_path": "data/antipatterns/labeled/palette_bloat_correct.png",
+    "width": 16,
+    "height": 24,
+    "description": "24+ distinct colours (bad) vs ≤15 colour palette (correct)"
+  },
+  {
+    "name": "inconsistent_lighting",
+    "bad_path": "data/antipatterns/labeled/inconsistent_lighting_bad.png",
+    "correct_path": "data/antipatterns/labeled/inconsistent_lighting_correct.png",
+    "width": 16,
+    "height": 24,
+    "description": "Highlights on both sides (bad) vs single top-left light source (correct)"
+  },
+  {
+    "name": "orphan_pixels",
+    "bad_path": "data/antipatterns/labeled/orphan_pixels_bad.png",
+    "correct_path": "data/antipatterns/labeled/orphan_pixels_correct.png",
+    "width": 16,
+    "height": 24,
+    "description": "Isolated stray pixels in background (bad) vs clean silhouette (correct)"
+  },
+  {
+    "name": "anti_aliasing",
+    "bad_path": "data/antipatterns/labeled/anti_aliasing_bad.png",
+    "correct_path": "data/antipatterns/labeled/anti_aliasing_correct.png",
+    "width": 16,
+    "height": 24,
+    "description": "Semi-transparent blended edge pixels (bad) vs crisp 1-px outline (correct)"
+  }
+]

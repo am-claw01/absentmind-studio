@@ -45,3 +45,15 @@ Reasoning log for **non-mechanical** decisions (CHANGE-027). Primary instrument 
 ---
 
 *Initialized Phase 0 — CHANGE-027.*
+
+## 2026-05-10 | Phase 3 | Architecture
+
+**Decision:** Remove strict SNES 15-bit RGB (channels div-by-8) and hard 15-color cap from core pipeline validators. Move to optional --snes-strict flag only.
+**Governing Rule:** SPEC §10.1 — hardware constraints not enforced by default. §10.2 — compliance is a post-processing filter.
+**Alternatives Considered:** (A) Keep strict — contradicts spec, limits training data. (B) Optional flag (chosen) — train on SNES aesthetic, apply filter on export/generation when toggled.
+**Rationale:** User correctly identified contradiction. Aesthetic-first training then compliance filter is the correct architecture. Easier to add filter than untrain hardware strictness.
+**Confidence:** High
+**Risk Level:** Low
+**Reversible:** Yes.
+
+---

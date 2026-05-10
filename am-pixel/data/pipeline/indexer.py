@@ -2,15 +2,28 @@
 indexer.py — AM Pixel Pipeline · Stage 2
 Converts sprite PNG images to palette-index format.
 
-The SNES hardware uses 4-bpp (16-colour) palettes where each channel is
-stored at 5-bit precision (0–31 → multiply by 8 gives 0–248 in 8-step
-increments).  This module:
+Design philosophy
+-----------------
+The core pipeline trains on **SNES aesthetic** (art style, palette feel,
+outline technique).  Hardware compliance is an *optional* filter applied at
+export time (see ``tools/snes_compliance_filter.py``).
 
+Default mode
+~~~~~~~~~~~~
   1. Extracts the unique non-transparent colours from a sprite.
-  2. Optionally reduces the palette to ≤15 colours (slot 0 = transparent).
-  3. Validates SNES compatibility.
-  4. Builds a flat index grid (0 = transparent, 1-based for real colours).
-  5. Writes a JSON file with all of the above for downstream stages.
+  2. Builds a flat index grid (0 = transparent, 1-based for real colours).
+  3. Writes a JSON file with all metadata for downstream stages.
+
+  No palette reduction or 15-bit quantization is performed — the sprite's
+  original colors are preserved as-is.
+
+``--snes-strict`` / ``snes_strict=True``
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  Additionally:
+  2b. SNES-quantizes every colour (snap to nearest 8-step value, 0–248).
+  2c. Deduplicates after quantization.
+  2d. Reduces to ≤15 colours if necessary (iterative nearest-pair merge).
+  2e. Validates SNES compatibility and records ``snes_valid`` in the JSON.
 """
 
 from __future__ import annotations
@@ -239,20 +252,27 @@ def reduce_palette(
     return pal
 
 
-def index_sprite(image_path: str, output_path: str) -> dict[str, Any]:
+def index_sprite(
+    image_path: str,
+    output_path: str,
+    snes_strict: bool = False,
+) -> dict[str, Any]:
     """
     Full indexing pipeline for a single sprite image.
 
-    Steps
-    -----
+    Default Steps
+    -------------
     1. Load the image and convert to RGBA.
-    2. Extract unique non-transparent colours.
-    3. SNES-quantize every colour (snap to nearest 8-step value).
-    4. Deduplicate after quantization.
-    5. If >15 colours, reduce palette via colour merging.
-    6. Validate SNES compatibility.
-    7. Build the index grid (0 = transparent, 1-based otherwise).
-    8. Write a JSON file with all metadata.
+    2. Extract unique non-transparent colours (original values, no reduction).
+    3. Build the index grid (0 = transparent, 1-based otherwise).
+    4. Write a JSON file with all metadata.
+
+    Additional Steps when ``snes_strict=True``
+    ------------------------------------------
+    2b. SNES-quantize every colour (snap to nearest 8-step value, 0–248).
+    2c. Deduplicate after quantization.
+    2d. If >15 colours, reduce palette via colour merging.
+    2e. Validate SNES compatibility; record ``snes_valid`` in the JSON.
 
     Parameters
     ----------
@@ -260,13 +280,17 @@ def index_sprite(image_path: str, output_path: str) -> dict[str, Any]:
         Path to the source sprite PNG.
     output_path : str
         Path where the JSON index file will be written.
+    snes_strict : bool
+        When True, enforce SNES hardware constraints (15-bit quantization,
+        max 15 colours).  When False (default), original colours are
+        preserved and no reduction is applied.
 
     Returns
     -------
     dict
         The same data structure that is written to *output_path*:
-        ``{sprite_id, width, height, palette, index_grid, transparent_index,
-        snes_valid}``.
+        ``{sprite_id, width, height, palette, index_grid,
+        transparent_index}`` plus ``snes_valid`` when ``snes_strict=True``.
     """
     img_path = Path(image_path)
     img = Image.open(img_path).convert("RGBA")
@@ -275,58 +299,66 @@ def index_sprite(image_path: str, output_path: str) -> dict[str, Any]:
     # 1. Extract unique colours
     raw_palette = extract_palette(img)
 
-    # 2. SNES-quantize each colour
-    quantized: list[tuple[int, int, int]] = []
-    seen_q: set[tuple[int, int, int]] = set()
-    for rgb in raw_palette:
-        q = snes_quantize_color(*rgb)
-        if q not in seen_q:
-            seen_q.add(q)
-            quantized.append(q)
+    if snes_strict:
+        # 2b. SNES-quantize each colour
+        quantized: list[tuple[int, int, int]] = []
+        seen_q: set[tuple[int, int, int]] = set()
+        for rgb in raw_palette:
+            q = snes_quantize_color(*rgb)
+            if q not in seen_q:
+                seen_q.add(q)
+                quantized.append(q)
 
-    # 3. Reduce if necessary
-    if len(quantized) > 15:
-        quantized = reduce_palette(quantized, target=15)
-        # Re-snap after merging
-        quantized = [snes_quantize_color(*c) for c in quantized]
-        # Deduplicate again
-        deduped: list[tuple[int, int, int]] = []
-        seen2: set[tuple[int, int, int]] = set()
-        for c in quantized:
-            if c not in seen2:
-                seen2.add(c)
-                deduped.append(c)
-        quantized = deduped
+        # 2c. Reduce if necessary
+        if len(quantized) > 15:
+            quantized = reduce_palette(quantized, target=15)
+            # Re-snap after merging
+            quantized = [snes_quantize_color(*c) for c in quantized]
+            # Deduplicate again
+            deduped: list[tuple[int, int, int]] = []
+            seen2: set[tuple[int, int, int]] = set()
+            for c in quantized:
+                if c not in seen2:
+                    seen2.add(c)
+                    deduped.append(c)
+            quantized = deduped
 
-    snes_ok = validate_snes_palette(quantized)
+        # 2d. Validate
+        snes_ok = validate_snes_palette(quantized)
+        final_palette = quantized
+    else:
+        # Default: use original colours as-is, no reduction
+        final_palette = raw_palette
+        snes_ok = None  # not evaluated
 
-    # 4. Build index grid using SNES-quantized colour for each pixel
-    index_grid, _ = quantize_to_palette(img, quantized)
+    # 3. Build index grid
+    index_grid, _ = quantize_to_palette(img, final_palette)
 
-    # 5. Flatten the grid
+    # 4. Flatten the grid
     flat_grid = [idx for row in index_grid for idx in row]
 
-    # 6. Build result dict
+    # 5. Build result dict
     sprite_id = img_path.stem
     result: dict[str, Any] = {
-        "sprite_id":        sprite_id,
-        "width":            w,
-        "height":           h,
-        "palette":          [_hex(*c) for c in quantized],
-        "index_grid":       flat_grid,
+        "sprite_id":         sprite_id,
+        "width":             w,
+        "height":            h,
+        "palette":           [_hex(*c) for c in final_palette],
+        "index_grid":        flat_grid,
         "transparent_index": 0,
-        "snes_valid":       snes_ok,
     }
+    if snes_strict:
+        result["snes_valid"] = snes_ok
 
     out = Path(output_path)
     out.parent.mkdir(parents=True, exist_ok=True)
     with open(out, "w", encoding="utf-8") as fh:
         json.dump(result, fh, indent=2)
 
+    snes_tag = f", SNES-valid={snes_ok}" if snes_strict else ""
     print(
         f"[indexer] {sprite_id}: {w}×{h}, "
-        f"{len(quantized)} colour(s), "
-        f"SNES-valid={snes_ok} → {out}"
+        f"{len(final_palette)} colour(s){snes_tag} → {out}"
     )
     return result
 
@@ -339,7 +371,11 @@ def main() -> None:
     """Command-line interface for the sprite indexer."""
     parser = argparse.ArgumentParser(
         prog="indexer",
-        description="Convert a sprite PNG to a palette-index JSON.",
+        description=(
+            "Convert a sprite PNG to a palette-index JSON. "
+            "By default, original colors are preserved (no reduction). "
+            "Use --snes-strict to enforce SNES hardware constraints."
+        ),
     )
     parser.add_argument(
         "image_path",
@@ -349,10 +385,19 @@ def main() -> None:
         "output_path",
         help="Path for the output JSON index file.",
     )
+    parser.add_argument(
+        "--snes-strict",
+        action="store_true",
+        default=False,
+        help=(
+            "Enforce SNES hardware rules: 15-bit quantization, "
+            "max 15 colours, SNES-valid recorded in output JSON."
+        ),
+    )
     args = parser.parse_args()
 
     try:
-        index_sprite(args.image_path, args.output_path)
+        index_sprite(args.image_path, args.output_path, snes_strict=args.snes_strict)
     except Exception as exc:
         print(f"[indexer] ERROR: {exc}", file=sys.stderr)
         sys.exit(1)
