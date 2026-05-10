@@ -1,2 +1,94 @@
 <!DOCTYPE html>
-<html><head><title>AM Pixel</title></head><body>Phase 0 shell</body></html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AM Pixel — Absentmind Studio</title>
+  <link rel="stylesheet" href="/static/main.css">
+</head>
+<body>
+  <div id="app">
+
+    <!-- ── Header / Status Bar ─────────────────────────────────────── -->
+    <header id="status-bar">
+      <span class="brand">AM Pixel <span class="version">v0.1</span></span>
+      <span id="hw-status">Loading hardware info…</span>
+      <span id="phase-status"></span>
+      <nav>
+        <a href="/" class="nav-link active">Project</a>
+        <a href="/freeform" class="nav-link">Freeform</a>
+      </nav>
+    </header>
+
+    <!-- ── Main Layout ──────────────────────────────────────────────── -->
+    <div id="main-layout">
+
+      <!-- ── Left: Project Tabs ──────────────────────────────────────── -->
+      <aside id="project-sidebar">
+        <div class="sidebar-section">
+          <h3>Project</h3>
+          <ul class="tab-list">
+            <li class="tab-item active" data-tab="characters">Characters</li>
+            <li class="tab-item" data-tab="enemies">Enemies</li>
+            <li class="tab-item" data-tab="battle_effects">Battle Effects</li>
+            <li class="tab-item" data-tab="tilesets">Tilesets</li>
+            <li class="tab-item" data-tab="parallax">Parallax BG</li>
+            <li class="tab-item" data-tab="ui">UI</li>
+            <li class="tab-item" data-tab="fonts">Fonts</li>
+            <li class="tab-item" data-tab="manifest">Continuity Manifest</li>
+          </ul>
+        </div>
+      </aside>
+
+      <!-- ── Center: Chat + Preview ─────────────────────────────────── -->
+      <main id="workspace">
+
+        <!-- Sprite Preview Panel -->
+        <div id="preview-panel">
+          <div class="preview-box">
+            <div class="preview-label">1× (actual size)</div>
+            <canvas id="preview-1x" width="64" height="64"></canvas>
+          </div>
+          <div class="preview-box">
+            <div class="preview-label">4× zoom</div>
+            <canvas id="preview-4x" width="256" height="256"></canvas>
+          </div>
+          <!-- Approval Controls -->
+          <div id="approval-controls" class="hidden">
+            <button id="btn-approve" class="btn btn-approve">✓ Approve</button>
+            <button id="btn-adjust" class="btn btn-adjust">✎ Adjust</button>
+            <button id="btn-reject" class="btn btn-reject">✗ Reject</button>
+          </div>
+          <div id="adjust-input" class="hidden">
+            <textarea id="adjust-note" placeholder="Describe the adjustment…" rows="2"></textarea>
+            <button id="btn-send-adjust" class="btn btn-adjust">Send Adjustment</button>
+          </div>
+        </div>
+
+        <!-- Chat Panel -->
+        <div id="chat-panel">
+          <div id="chat-log"></div>
+          <div id="chat-input-row">
+            <textarea id="chat-input" placeholder="Describe what you want to generate…" rows="2"></textarea>
+            <button id="btn-send" class="btn btn-send">Send</button>
+          </div>
+        </div>
+
+      </main>
+
+      <!-- ── Right: Asset Grid ───────────────────────────────────────── -->
+      <aside id="asset-panel">
+        <div id="asset-grid-header">
+          <span id="current-tab-label">Characters</span>
+        </div>
+        <div id="asset-grid">
+          <div class="asset-placeholder">No assets yet. Generate something!</div>
+        </div>
+      </aside>
+
+    </div><!-- /main-layout -->
+  </div><!-- /app -->
+
+  <script src="/static/main.js"></script>
+</body>
+</html>

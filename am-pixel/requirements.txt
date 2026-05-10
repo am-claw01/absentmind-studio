@@ -1,9 +1,17 @@
-# AM Pixel — core dependencies (pin versions in Phase 1+)
-torch
-fastapi
-uvicorn
-pydantic
-numpy
-Pillow
-httpx
-anthropic
+# AM Pixel — Python dependencies
+# Install: python3.14 -m pip install -r requirements.txt --break-system-packages
+
+# Web UI & API
+fastapi==0.136.1
+uvicorn==0.46.0
+jinja2==3.1.6
+python-multipart==0.0.27
+
+# ML / model
+torch>=2.11.0
+
+# Image processing
+Pillow>=12.2.0
+
+# Testing
+pytest>=9.0.0

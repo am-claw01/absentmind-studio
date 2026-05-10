@@ -1,2 +1,88 @@
 <!DOCTYPE html>
-<html><body>Freeform tab placeholder</body></html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AM Pixel — Freeform (Mode 7)</title>
+  <link rel="stylesheet" href="/static/main.css">
+</head>
+<body>
+  <div id="app">
+
+    <header id="status-bar">
+      <span class="brand">AM Pixel <span class="version">v0.1</span> — <span class="mode-badge">Freeform Mode 7</span></span>
+      <nav>
+        <a href="/" class="nav-link">Project</a>
+        <a href="/freeform" class="nav-link active">Freeform</a>
+      </nav>
+    </header>
+
+    <div id="freeform-layout">
+
+      <!-- Controls -->
+      <div id="freeform-controls">
+        <h2>Freeform Generation</h2>
+        <p class="muted">No DNA. No palette constraints. No project state. Any resolution up to 256×256.</p>
+
+        <label>Description
+          <textarea id="ff-description" rows="4" placeholder="A cyberpunk robot, neon-lit alley background, 64x64…"></textarea>
+        </label>
+
+        <div class="dim-row">
+          <label>Width (px) <input type="number" id="ff-width" value="64" min="8" max="256" step="8"></label>
+          <label>Height (px) <input type="number" id="ff-height" value="64" min="8" max="256" step="8"></label>
+        </div>
+
+        <button id="ff-generate" class="btn btn-send">Generate</button>
+      </div>
+
+      <!-- Preview -->
+      <div id="freeform-preview">
+        <div class="preview-box">
+          <div class="preview-label">1× (actual size)</div>
+          <canvas id="ff-preview-1x" width="64" height="64"></canvas>
+        </div>
+        <div class="preview-box">
+          <div class="preview-label">4× zoom</div>
+          <canvas id="ff-preview-4x" width="256" height="256"></canvas>
+        </div>
+
+        <div id="ff-approval" class="hidden">
+          <button id="ff-approve" class="btn btn-approve">✓ Export PNG</button>
+          <button id="ff-reject" class="btn btn-reject">✗ Discard</button>
+        </div>
+
+        <div id="ff-log"></div>
+      </div>
+
+    </div>
+  </div>
+
+  <script src="/static/main.js"></script>
+  <script>
+    // Freeform-specific JS
+    document.getElementById('ff-generate').addEventListener('click', async () => {
+      const desc = document.getElementById('ff-description').value.trim();
+      const w = parseInt(document.getElementById('ff-width').value);
+      const h = parseInt(document.getElementById('ff-height').value);
+      if (!desc) { alert('Please enter a description.'); return; }
+
+      const log = document.getElementById('ff-log');
+      log.textContent = 'Generating…';
+
+      try {
+        const res = await fetch('/api/freeform', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({description: desc, width: w, height: h}),
+        });
+        const data = await res.json();
+        log.textContent = data.reply || 'Done.';
+        // TODO: render candidate when generation engine is connected (Phase 7)
+      } catch (e) {
+        log.textContent = 'Error: ' + e.message;
+      }
+    });
+  </script>
+</body>
+</html>

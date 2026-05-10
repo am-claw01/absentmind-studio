@@ -32,4 +32,16 @@ Reasoning log for **non-mechanical** decisions (CHANGE-027). Primary instrument 
 
 ---
 
+## 2026-05-09 | Phase 0 | ProcessDeviation
+
+**Decision:** Use Python 3.14 system interpreter (not a project venv) for Phase 0 tool execution in WSL.
+**Governing Rule:** ROADMAP Phase 0 — install dependencies, verify PyTorch functional
+**Alternatives Considered:** (A) Create a dedicated virtualenv — preferred long-term but requires pip in venv first. (B) Use Hermes venv — stripped, no pip. (C) Use system Python 3.14 with --break-system-packages — fastest path to functional environment.
+**Rationale:** WSL environment has no pip installed in any existing venv; system Python 3.14 is the only available interpreter with pip access via get-pip.py bootstrap. This is a dev-environment bootstrapping decision, not an architecture decision. A proper venv should be established before Phase 3 data pipeline work begins.
+**Confidence:** High
+**Risk Level:** Low
+**Reversible:** Yes — venv can be created at any time; requirements.txt captures all dependencies.
+
+---
+
 *Initialized Phase 0 — CHANGE-027.*
