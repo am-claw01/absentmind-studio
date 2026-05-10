@@ -58,8 +58,15 @@ Date completed: 2026-05-09
 Evidence: All 6 documents written to knowledge/ directory; verified present with line counts 174-553 lines each.
 
 ## Phase 2 — Style Bible
-Date completed:
-Evidence:
+- [x] MASTER_PALETTE.md — 14 ramp families, all SNES 15-bit compliant, hue-shifted
+- [x] PROPORTION_SYSTEM.md — all contexts defined (world/battle/chibi/portrait/NPC/enemy/boss)
+- [x] ANIMATION_STANDARD.md — all animation sets locked with frame counts and timing
+- [x] LIGHTING_STANDARD.md — top-left default + 4 environment variants
+- [x] CONTINUITY_MANIFEST.md initialized
+- [x] dna/characters/ directory initialized
+- [x] sheets/ directory initialized
+Date completed: 2026-05-09
+Evidence: All 4 style bible documents written (345-450 lines each); directories verified present.
 
 ## Phase 3 — Training Data Pipeline
 Date completed:
