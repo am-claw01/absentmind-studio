@@ -93,3 +93,15 @@ Reasoning log for **non-mechanical** decisions (CHANGE-027). Primary instrument 
 **Reversible:** Yes
 
 ---
+
+## 2026-05-10 | Phase 3 | DataPipeline
+
+**Decision:** Wire `view_pair_detector.find_candidate_pairs()` into `run_pipeline.py` as Stage 1b — called per-sheet immediately after extraction, before index/classify/reorder passes. Writes `candidates.json` alongside sequences in each sheet's output directory.
+**Governing Rule:** SPEC §6 (view-pair training data); ROADMAP Phase 3 — corpus must include view-pair relationship metadata before training; Constitution Rule 5 — data structure decisions made before data enters pipeline, not retrofitted after
+**Alternatives Considered:** (A) Retrofit after pipeline completes — runs on already-processed corpus but thousands of sheets already lack candidates.json by morning. (B) Separate post-process script — decoupled but requires a second pass over all corpus dirs. (C) Inline per-sheet Stage 1b (chosen) — runs on extracted PNGs before they enter stages 2–4, data is available immediately, zero retrofit cost for new sheets.
+**Rationale:** Kyle identified the gap before corpus grew too large to retrofit cleanly. Per-sheet detection is O(n²) per sheet, not O(N²) over the full corpus — manageable at 20–80 sprites per sheet. candidates.json is written to each sheet's output dir alongside the sequences, consistent with the existing file layout. Pair count is tracked in counters and written to corpus_stats.md.
+**Confidence:** High
+**Risk Level:** Low
+**Reversible:** Yes — candidates.json files can be regenerated or deleted without affecting sequences.
+
+---
