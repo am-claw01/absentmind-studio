@@ -101,10 +101,10 @@ def score_one(png: Path, sprite_json: Path | None) -> dict:
 
     bd = result.get("breakdown", {})
     # Use relative path as sprite_id to avoid cross-sheet stem collisions
-    try:
-        rel_id = str(png.resolve().relative_to((PROJECT_ROOT / "data" / "corpus" / "train").resolve()))
-    except ValueError:
-        rel_id = str(png)
+    # Fast string prefix strip (no .resolve() per sprite — NTFS is slow)
+    corpus_prefix = str((PROJECT_ROOT / "data" / "corpus" / "train").resolve()) + "/"
+    png_str = str(png.resolve())
+    rel_id = png_str[len(corpus_prefix):] if png_str.startswith(corpus_prefix) else str(png)
 
     return {
         "sprite_id":          rel_id,
@@ -205,12 +205,13 @@ def main() -> None:
     already_done = len(scores)
     print(f"Resuming: {already_done:,} already scored, {len(all_pngs)-already_done:,} remaining")
 
-    corpus_root = (PROJECT_ROOT / "data" / "corpus" / "train").resolve()
+    # Fast string-based ID — no .resolve() on 493K paths (NTFS is slow)
+    corpus_prefix = str(corpus_dir.resolve()) + "/"
     def make_id(p: Path) -> str:
-        try:
-            return str(p.resolve().relative_to(corpus_root))
-        except ValueError:
-            return str(p)
+        s = str(p)
+        if s.startswith(corpus_prefix):
+            return s[len(corpus_prefix):]
+        return s
     to_score = [p for p in all_pngs if make_id(p) not in scores]
     if args.limit:
         to_score = to_score[: args.limit]
