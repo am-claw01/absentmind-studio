@@ -3,5 +3,5 @@
 # CHANGE-028 Mechanism 5
 REPO_ROOT=$(git rev-parse --show-toplevel)
 export PYTHONPATH="$REPO_ROOT/am-pixel"
-python "$REPO_ROOT/am-pixel/tools/compliance.py"
+python3.14 "$REPO_ROOT/am-pixel/tools/compliance.py"
 exit $?

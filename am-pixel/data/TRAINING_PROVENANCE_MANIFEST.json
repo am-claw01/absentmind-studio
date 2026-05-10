@@ -1,1 +1,70 @@
-[]
+[
+  {
+    "id": "9beac25c7bc5",
+    "pack_name": "Kenney Tiny Town",
+    "source_url": "https://kenney.nl/assets/tiny-town",
+    "author": "Kenney (Kenney.nl)",
+    "license": "CC0-1.0",
+    "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "local_paths": [
+      "/mnt/c/users/am-claw01/projects/absentmind-studio/am-pixel/data/raw/sprites/kenney/kenney_tiny-town.zip"
+    ],
+    "scraped_at": "2026-05-10T05:57:38.788346Z",
+    "extra": {
+      "zip_url": "https://kenney.nl/media/pages/assets/tiny-town/1a5e0f0e72-1707312668/kenney_tiny-town.zip",
+      "status": "pending"
+    }
+  },
+  {
+    "id": "8e53e37cbdf8",
+    "pack_name": "Kenney Micro Roguelike",
+    "source_url": "https://kenney.nl/assets/micro-roguelike",
+    "author": "Kenney (Kenney.nl)",
+    "license": "CC0-1.0",
+    "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "local_paths": [
+      "/mnt/c/users/am-claw01/projects/absentmind-studio/am-pixel/data/raw/sprites/kenney/kenney_micro-roguelike.zip"
+    ],
+    "scraped_at": "2026-05-10T05:57:41.238818Z",
+    "extra": {
+      "zip_url": "https://kenney.nl/media/pages/assets/micro-roguelike/a3f69db8a7-1707312668/kenney_micro-roguelike.zip",
+      "status": "pending"
+    }
+  },
+  {
+    "id": "e129b5cf4ea9",
+    "pack_name": "Kenney 1-Bit Pack",
+    "source_url": "https://kenney.nl/assets/1-bit-pack",
+    "author": "Kenney (Kenney.nl)",
+    "license": "CC0-1.0",
+    "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "local_paths": [
+      "/mnt/c/users/am-claw01/projects/absentmind-studio/am-pixel/data/raw/sprites/kenney/kenney_1-bit-pack.zip"
+    ],
+    "scraped_at": "2026-05-10T05:57:43.384549Z",
+    "extra": {
+      "zip_url": "https://kenney.nl/media/pages/assets/1-bit-pack/c813f5e2b9-1710347567/kenney_1-bit-pack.zip",
+      "status": "pending"
+    }
+  },
+  {
+    "id": "143e56ffb05c",
+    "pack_name": "faq",
+    "source_url": "https://opengameart.org/content/faq",
+    "author": "deanortori",
+    "license": "CC0-1.0",
+    "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "local_paths": [],
+    "scraped_at": "2026-05-10T05:57:50.854766Z",
+    "extra": {
+      "status": "complete",
+      "download_links": [
+        "https://opengameart.org/sites/default/files/css/css_xE-rWrJf-fncB6ztZfd2huxqgxu4WO-qwma6Xer30m4.css",
+        "https://opengameart.org/sites/default/files/css/css_ff3tJc71Z402cxcrQprs7GRkOQJuOqgs2LWeSWIHHR0.css",
+        "https://opengameart.org/sites/default/files/css/css_cGO_UhtPLR1KM8K-noH6DGH8G4mUG-JN_soxiCkv1u4.css",
+        "https://opengameart.org/sites/default/files/css/css_OtQOkIfOUJ2phWO18SxaKrQD2ZSEhULeB_iPCAGumwA.css"
+      ],
+      "png_count": 0
+    }
+  }
+]
