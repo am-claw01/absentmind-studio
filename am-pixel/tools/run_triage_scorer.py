@@ -197,22 +197,46 @@ def main() -> None:
     parser.add_argument("--skip-copy", action="store_true", help="Score only, skip bucket copies")
     args = parser.parse_args()
 
-    corpus_dir = Path(args.corpus)
-    all_pngs = sorted(corpus_dir.rglob("*.png"))
-    print(f"Found {len(all_pngs):,} PNGs in {corpus_dir}")
+    corpus_dir = Path(args.corpus).resolve()
+    filelist_path = PROJECT_ROOT / "data" / "golden_review" / "corpus_filelist.txt"
+
+    # Use `find` via shell — rglob on 493K NTFS files is extremely slow / causes OOM
+    # If a pre-generated filelist exists, use it (much faster on NTFS/WSL)
+    import subprocess
+    if filelist_path.exists():
+        print(f"Loading filelist from {filelist_path}...", flush=True)
+        project_prefix = str(PROJECT_ROOT) + "/"
+        all_paths = []
+        for line in filelist_path.read_text().splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            # Pure string ops — no Path/NTFS stat calls on 493K entries
+            if line.startswith("/"):
+                all_paths.append(line)
+            else:
+                all_paths.append(project_prefix + line)
+    else:
+        print(f"Listing PNGs in {corpus_dir} (using find)...", flush=True)
+        result = subprocess.run(
+            ["find", str(corpus_dir), "-name", "*.png", "-type", "f"],
+            capture_output=True, text=True, timeout=300,
+            cwd="/"  # ensure absolute paths in output
+        )
+        all_paths = [l.strip() for l in result.stdout.splitlines() if l.strip()]
+
+    corpus_prefix = str(corpus_dir) + "/"
+    def make_id(path_str: str) -> str:
+        if path_str.startswith(corpus_prefix):
+            return path_str[len(corpus_prefix):]
+        return path_str
+    print(f"Found {len(all_paths):,} PNGs in {corpus_dir}")
 
     scores = load_scores()
     already_done = len(scores)
-    print(f"Resuming: {already_done:,} already scored, {len(all_pngs)-already_done:,} remaining")
+    print(f"Resuming: {already_done:,} already scored, {len(all_paths)-already_done:,} remaining")
 
-    # Fast string-based ID — no .resolve() on 493K paths (NTFS is slow)
-    corpus_prefix = str(corpus_dir.resolve()) + "/"
-    def make_id(p: Path) -> str:
-        s = str(p)
-        if s.startswith(corpus_prefix):
-            return s[len(corpus_prefix):]
-        return s
-    to_score = [p for p in all_pngs if make_id(p) not in scores]
+    to_score = [p for p in all_paths if make_id(p) not in scores]
     if args.limit:
         to_score = to_score[: args.limit]
     print(f"Scoring {len(to_score):,} sprites with {args.workers} workers...")
@@ -220,10 +244,12 @@ def main() -> None:
     done = 0
     save_every = 500
 
-    def score_task(png: Path) -> dict:
+    def score_task(path_str: str) -> dict:
+        png = Path(path_str)
         sprite_json = png.parent / f"{png.stem}.json"
         return score_one(png, sprite_json)
 
+    total = len(all_paths)
     with ThreadPoolExecutor(max_workers=args.workers) as ex:
         futs = {ex.submit(score_task, p): p for p in to_score}
         for fut in as_completed(futs):
@@ -236,8 +262,8 @@ def main() -> None:
                 done += 1
                 if done % save_every == 0 or done == len(to_score):
                     save_scores(scores)
-                    pct = (already_done + done) / len(all_pngs) * 100
-                    print(f"  [{already_done+done:,}/{len(all_pngs):,}] {pct:.1f}% — saving...", flush=True)
+                    pct = (already_done + done) / total * 100
+                    print(f"  [{already_done+done:,}/{total:,}] {pct:.1f}% — saving...", flush=True)
             except Exception as e:
                 print(f"  ERROR: {e}", file=sys.stderr)
 
