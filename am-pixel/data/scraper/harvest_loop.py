@@ -347,6 +347,25 @@ OGA_DIRECT_SOURCES = [
     ("https://opengameart.org/content/npc-sprite-sheets",                  "npc_sheets",   "CC0"),
     ("https://opengameart.org/content/pixel-shmup-ship-sprites",           "shmup_ships",  "CC0"),
     ("https://opengameart.org/content/explosion-animations",               "explosions",   "CC0"),
+    # ── New CC0 sources — verified 2026-05-10 ─────────────────────────────
+    ("https://opengameart.org/content/dungeon-tileset-ii",                 "dungeon_ts2",  "CC0"),
+    ("https://opengameart.org/content/ninja-adventure-asset-pack",         "ninja_adv",    "CC0"),
+    ("https://opengameart.org/content/halloween-tileset",                  "halloween",    "CC0"),
+    ("https://opengameart.org/content/pixel-platformer",                   "oga_pixel_plat","CC0"),
+    ("https://opengameart.org/content/1-bit-platformer-pack",              "onebit_plat",  "CC0"),
+    ("https://opengameart.org/content/micro-roguelike",                    "oga_micro_rl",  "CC0"),
+    ("https://opengameart.org/content/abstract-platformer",                "oga_abstract", "CC0"),
+    ("https://opengameart.org/content/tiny-dungeon",                       "oga_tiny_dng",  "CC0"),
+    ("https://opengameart.org/content/kenneys-tiny-town",                  "oga_tiny_town", "CC0"),
+    ("https://opengameart.org/content/game-icons",                         "oga_game_icons","CC0"),
+    ("https://opengameart.org/content/surt-simple-dungeon-crawler-tileset","surt_dungeon",  "CC0"),
+    # ── New CC-BY-SA sources — verified 2026-05-10 ────────────────────────
+    ("https://opengameart.org/content/lpc-style-farm-animals",             "lpc_farm_anim","CC-BY-SA"),
+    ("https://opengameart.org/content/lpc-woodland-character",             "lpc_woodland",  "CC-BY-SA"),
+    ("https://opengameart.org/content/lpc-monsters",                       "lpc_monsters",  "CC-BY-SA"),
+    ("https://opengameart.org/content/lpc-chest-animations",               "lpc_chest",    "CC-BY-SA"),
+    # ── New CC-BY source — verified 2026-05-10 ────────────────────────────
+    ("https://opengameart.org/content/tiny-rpg-forest",                    "tiny_rpg_fst",  "CC-BY"),
 ]
 
 def scrape_oga_direct(raw_dir: Path, known: set[str]) -> list[Path]:
