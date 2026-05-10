@@ -105,3 +105,27 @@ Reasoning log for **non-mechanical** decisions (CHANGE-027). Primary instrument 
 **Reversible:** Yes — candidates.json files can be regenerated or deleted without affecting sequences.
 
 ---
+
+## 2026-05-10 | Phase 3 | DataPipeline
+
+**Decision:** Add `sheet_type_classifier.py` as Stage 1b in the pipeline — classifies each sheet as `character`, `tileset`, or `ambiguous` before routing to pair detection or tileset tagging.
+**Governing Rule:** SPEC §6 (view-pair training data); Constitution Rule 5 (data structure committed before training, not retrofitted); Rule 8 (accuracy first — false-positive pairs from tilesets degrade model quality)
+**Alternatives Considered:** (A) Run pair detection on all sheets — produces false positives on tilesets (palette-similar tiles are not view pairs). (B) Skip pair detection entirely — loses character view-pair signal. (C) Sheet-type classify first, route accordingly (chosen) — character sheets get pair detection, tilesets get tileset_id + grid position tags, ambiguous sheets skip pairing rather than guess.
+**Rationale:** Palette-overlap heuristic cannot distinguish "same character, different direction" from "same tileset, different terrain type" without additional signal. Classification uses three independent signals (name keywords, sprite count, mean palette overlap) with explicit confidence scoring. Ambiguous sheets default to safe path (no pairing) rather than guessing. Thresholds are tunable in the classifier.
+**Confidence:** High
+**Risk Level:** Low
+**Reversible:** Yes — sheet classification output files can be regenerated. Classifier thresholds tunable without reprocessing sprites.
+
+---
+
+## 2026-05-10 | Phase 3 | DataPipeline
+
+**Decision:** Wire `view_pair_detector` and `sheet_type_classifier` into `harvest_loop.py`'s `run_pipeline_on()` function — the live pipeline. The previously patched `run_pipeline.py` was a batch script, not the function the harvest loop calls.
+**Governing Rule:** Constitution Rule 5 (provenance and structure metadata written during ingestion, not retrofitted); ROADMAP Phase 3
+**Alternatives Considered:** (A) Retrofit pairs onto existing corpus after harvest completes — exponentially harder as corpus grows; impossible to do per-sheet without re-opening all sprites. (B) Wire into `run_pipeline.py` only (prior incomplete fix) — does not affect the live harvest loop. (C) Wire into both `harvest_loop.py` and `run_pipeline.py` (chosen) — both the live loop and manual batch runs now apply sheet-type routing and pair detection.
+**Rationale:** Kyle identified the gap while the harvest loop was actively running. Every sheet processed from this commit onward will have correct routing. Existing corpus sheets processed before this change will not have candidates.json or tileset_meta.json — a known gap, documented, acceptable since the training data commitment (Phase 4) has not been made yet.
+**Confidence:** High
+**Risk Level:** Low
+**Reversible:** Yes.
+
+---

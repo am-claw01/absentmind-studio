@@ -409,19 +409,22 @@ def scrape_oga_direct(raw_dir: Path, known: set[str]) -> list[Path]:
 # ── Pipeline ───────────────────────────────────────────────────────────────
 def run_pipeline_on(pngs: list[Path], manifest: list[dict]) -> dict:
     """Process a batch of new PNGs through the pipeline."""
-    from extractor          import extract_sheet
-    from indexer            import index_sprite
-    from pixel_classifier   import classify_sprite
-    from sequence_reorderer import reorder_sprite, save_sequence
+    from extractor            import extract_sheet
+    from indexer              import index_sprite
+    from pixel_classifier     import classify_sprite
+    from sequence_reorderer   import reorder_sprite, save_sequence
+    from sheet_type_classifier import classify_sheet
+    from view_pair_detector   import find_candidate_pairs
 
     CORPUS_TRAIN.mkdir(parents=True, exist_ok=True)
     CORPUS_VAL.mkdir(parents=True, exist_ok=True)
 
-    stats = dict(sheets=0, sprites=0, errors=0)
+    stats = dict(sheets=0, sprites=0, errors=0,
+                 character_sheets=0, tileset_sheets=0,
+                 ambiguous_sheets=0, pair_candidates=0)
     random.seed()
 
     MIN_SIZE = 8
-    MAX_SIZE = 256
 
     for sheet_path in pngs:
         if not sheet_path.exists():
@@ -448,13 +451,90 @@ def run_pipeline_on(pngs: list[Path], manifest: list[dict]) -> dict:
             out_dir = out_base / sheet_path.stem
             out_dir.mkdir(parents=True, exist_ok=True)
 
-            sprites = extract_sheet(
+            extractor_manifest = extract_sheet(
                 str(sheet_path), str(out_dir),
                 mode=mode, tile_w=tile_w, tile_h=tile_h, min_size=MIN_SIZE
             )
             stats["sheets"] += 1
 
-            for i, sp in enumerate(sprites):
+            # Collect extracted PNG paths for post-extraction steps
+            extracted_pngs = [Path(m["output_path"]) for m in extractor_manifest]
+
+            # ── Stage 1b: Sheet-type classification ────────────────────────
+            sheet_cls = classify_sheet(extractor_manifest, sheet_path, extracted_pngs)
+
+            # ── Stage 1c: Route by sheet type ──────────────────────────────
+            if sheet_cls.sheet_type == "character":
+                stats["character_sheets"] += 1
+                # Run view-pair detection for character sheets
+                if len(extracted_pngs) >= 2:
+                    try:
+                        pair_manifest = [
+                            {"sprite_id": p.stem, "width": m["width"],
+                             "height": m["height"], "image_path": str(p),
+                             "source_sheet": sheet_path.stem}
+                            for p, m in zip(extracted_pngs, extractor_manifest)
+                        ]
+                        pairs = find_candidate_pairs(pair_manifest)
+                        candidates_path = out_dir / "candidates.json"
+                        with open(candidates_path, "w", encoding="utf-8") as fh:
+                            json.dump({
+                                "source_sheet":         sheet_path.stem,
+                                "sheet_type":           "character",
+                                "sprite_count":         len(extracted_pngs),
+                                "pair_count":           len(pairs),
+                                "classifier_confidence": sheet_cls.confidence,
+                                "classifier_signals":   sheet_cls.signals,
+                                "candidates":           pairs,
+                            }, fh, indent=2)
+                        stats["pair_candidates"] += len(pairs)
+                    except Exception as e:
+                        log(f"  [pair_detector] ERROR on {sheet_path.name}: {e}")
+
+            elif sheet_cls.sheet_type == "tileset":
+                stats["tileset_sheets"] += 1
+                # Tag every tile with tileset_id + grid position from extractor manifest
+                tileset_meta_path = out_dir / "tileset_meta.json"
+                tiles = []
+                for m in extractor_manifest:
+                    tiles.append({
+                        "sprite_id":   m.get("sprite_id"),
+                        "tileset_id":  sheet_cls.tileset_id,
+                        "source_sheet": sheet_path.stem,
+                        "grid_x":      m.get("sheet_x"),
+                        "grid_y":      m.get("sheet_y"),
+                        "width":       m.get("width"),
+                        "height":      m.get("height"),
+                        "output_path": m.get("output_path"),
+                        "sheet_type":  "tileset",
+                        "pair_detection": "skipped",
+                        "edge_compatibility": "pending_spec_decision",
+                    })
+                with open(tileset_meta_path, "w", encoding="utf-8") as fh:
+                    json.dump({
+                        "tileset_id":            sheet_cls.tileset_id,
+                        "source_sheet":          sheet_path.stem,
+                        "classifier_confidence": sheet_cls.confidence,
+                        "classifier_signals":    sheet_cls.signals,
+                        "tile_count":            len(tiles),
+                        "tiles":                 tiles,
+                    }, fh, indent=2)
+
+            else:  # ambiguous
+                stats["ambiguous_sheets"] += 1
+                # Tag as unclassified — skip pairing, write classification record
+                unclassified_path = out_dir / "sheet_classification.json"
+                with open(unclassified_path, "w", encoding="utf-8") as fh:
+                    json.dump({
+                        "source_sheet":          sheet_path.stem,
+                        "sheet_type":            "ambiguous",
+                        "pair_detection":        "skipped",
+                        "classifier_confidence": sheet_cls.confidence,
+                        "classifier_signals":    sheet_cls.signals,
+                    }, fh, indent=2)
+
+            # ── Stages 2-4: Index → Classify → Reorder (all sheet types) ──
+            for i, sp in enumerate(extracted_pngs):
                 try:
                     indexed = index_sprite(sp)
                     classified = classify_sprite(sp)
@@ -463,6 +543,7 @@ def run_pipeline_on(pngs: list[Path], manifest: list[dict]) -> dict:
                     stats["sprites"] += 1
                 except Exception as e:
                     stats["errors"] += 1
+
         except Exception as e:
             stats["errors"] += 1
 
@@ -486,6 +567,10 @@ def update_stats(manifest: list[dict], pipeline_stats: dict) -> None:
 ## Last Pipeline Pass
 - Sheets processed: {pipeline_stats.get('sheets', 0):,}
 - Sprites sequenced: {pipeline_stats.get('sprites', 0):,}
+- Character sheets: {pipeline_stats.get('character_sheets', 0):,}
+- Tileset sheets: {pipeline_stats.get('tileset_sheets', 0):,}
+- Ambiguous sheets: {pipeline_stats.get('ambiguous_sheets', 0):,}
+- View-pair candidates: {pipeline_stats.get('pair_candidates', 0):,}
 - Errors: {pipeline_stats.get('errors', 0)}
 """
     STATS_PATH.write_text(content)

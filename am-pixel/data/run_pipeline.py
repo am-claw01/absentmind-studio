@@ -36,6 +36,7 @@ import indexer            as idx_mod
 import pixel_classifier   as cls_mod
 import sequence_reorderer as seq_mod
 import view_pair_detector as vpd_mod
+import sheet_type_classifier as stc_mod
 
 from PIL import Image
 
@@ -210,12 +211,15 @@ def main() -> None:
     # ── Counters ──────────────────────────────────────────────────────────────
     sheets_processed   = 0
     sheets_skipped     = 0
-    sprites_extracted  = 0   # from sheet extraction
-    sprites_direct     = 0   # individual sprites processed directly
+    sprites_extracted  = 0
+    sprites_direct     = 0
     sprites_indexed    = 0
     sprites_classified = 0
     sprites_sequenced  = 0
-    pairs_found        = 0   # view-pair candidates detected across all sheets
+    pairs_found        = 0
+    character_sheets   = 0
+    tileset_sheets     = 0
+    ambiguous_sheets   = 0
     errors: list[str]  = []
     dim_samples: list[tuple[int, int]] = []
 
@@ -269,14 +273,60 @@ def main() -> None:
             sprites_extracted += len(extracted)
             print(f"    → {len(extracted)} sprites")
 
-            # Stage 1b: view-pair detection — run per-sheet immediately after extraction
-            # so pair relationships are available before sequences are used for training.
-            n_pairs = run_pair_detector(extracted, out_dir, source_sheet=sheet_png.stem)
-            if n_pairs > 0:
-                pairs_found += n_pairs
-                print(f"    → {n_pairs} view-pair candidates (candidates.json)")
-            elif n_pairs < 0:
-                errors.append(f"pair_detector:{sheet_png.name}")
+            # Stage 1b: sheet-type classification
+            sheet_cls = stc_mod.classify_sheet(manifest, sheet_png, extracted)
+            print(f"    → sheet_type={sheet_cls.sheet_type} confidence={sheet_cls.confidence:.2f}")
+
+            # Stage 1c: route by sheet type
+            if sheet_cls.sheet_type == "character":
+                character_sheets += 1
+                if len(extracted) >= 2:
+                    n_pairs = run_pair_detector(extracted, out_dir, source_sheet=sheet_png.stem)
+                    if n_pairs > 0:
+                        pairs_found += n_pairs
+                        print(f"    → {n_pairs} view-pair candidates (candidates.json)")
+                    elif n_pairs < 0:
+                        errors.append(f"pair_detector:{sheet_png.name}")
+
+            elif sheet_cls.sheet_type == "tileset":
+                tileset_sheets += 1
+                tileset_meta_path = out_dir / "tileset_meta.json"
+                tiles = []
+                for m in manifest:
+                    tiles.append({
+                        "sprite_id":          m.get("sprite_id"),
+                        "tileset_id":         sheet_cls.tileset_id,
+                        "source_sheet":       sheet_png.stem,
+                        "grid_x":             m.get("sheet_x"),
+                        "grid_y":             m.get("sheet_y"),
+                        "width":              m.get("width"),
+                        "height":             m.get("height"),
+                        "output_path":        m.get("output_path"),
+                        "sheet_type":         "tileset",
+                        "pair_detection":     "skipped",
+                        "edge_compatibility": "pending_spec_decision",
+                    })
+                with open(tileset_meta_path, "w", encoding="utf-8") as fh:
+                    json.dump({
+                        "tileset_id":            sheet_cls.tileset_id,
+                        "source_sheet":          sheet_png.stem,
+                        "classifier_confidence": sheet_cls.confidence,
+                        "classifier_signals":    sheet_cls.signals,
+                        "tile_count":            len(tiles),
+                        "tiles":                 tiles,
+                    }, fh, indent=2)
+
+            else:  # ambiguous
+                ambiguous_sheets += 1
+                unclassified_path = out_dir / "sheet_classification.json"
+                with open(unclassified_path, "w", encoding="utf-8") as fh:
+                    json.dump({
+                        "source_sheet":          sheet_png.stem,
+                        "sheet_type":            "ambiguous",
+                        "pair_detection":        "skipped",
+                        "classifier_confidence": sheet_cls.confidence,
+                        "classifier_signals":    sheet_cls.signals,
+                    }, fh, indent=2)
         else:
             sheets_skipped += 1
             errors.append(f"extract_empty:{sheet_png.name}")
@@ -359,6 +409,9 @@ def main() -> None:
     print("\n[pipeline] === Pipeline complete ===")
     print(f"  Source sheets processed:  {sheets_processed}")
     print(f"  Source sheets empty/skip: {sheets_skipped}")
+    print(f"  Character sheets:         {character_sheets}")
+    print(f"  Tileset sheets:           {tileset_sheets}")
+    print(f"  Ambiguous sheets:         {ambiguous_sheets}")
     print(f"  Sprites from extraction:  {sprites_extracted}")
     print(f"  Individual sprites direct:{sprites_direct}")
     print(f"  Total sprites indexed:    {sprites_indexed}")
