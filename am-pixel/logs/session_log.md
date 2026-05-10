@@ -36,3 +36,16 @@ One block per OpenClaw session — written **before** any tool use, file write, 
 ---
 
 *Initialized Phase 0 — CHANGE-026.*
+
+## 2026-05-10T01:10:00
+
+**Phase / gate:** Phase 3 — Training Data Pipeline (in progress)
+**CONSTITUTION:** Confirmed Rules 1–9 in context — yes
+**phase_gates.md:** Current phase: Phase 3 | Last gate completed: Phase 2 (Style Bible, 2026-05-09) | Next unchecked: Phase 3 completion gate
+**BLOCKERS:** None open
+**generation_log.md (last 10):** No entries — pass-rate trend: N/A (no generation yet; Phase 3 data pipeline in progress)
+**ROADMAP today:** Next task — Continue harvest_loop.py corpus expansion; complete Golden Dataset curation tooling; run manifest gap audit before Phase 3 gate
+
+**Summary:** Session boundary triggered by: (1) prior context compaction event, (2) human-raised provenance red flag (manifest count discrepancy — 1,016 committed vs 56,408 on disk), and (3) implementation of new session protocol rules (CHANGE-026 update, CHANGE-028). Constitution Rules 1–9 confirmed in context. Phase 3 is the active phase; Phases 0–2 are complete and committed. Current corpus state: 56,408 sprites in TRAINING_PROVENANCE_MANIFEST.json (retroactive fix applied this session — all entries marked `provenance_method: retroactive_verified` where applicable). Five packs quarantined to `data/raw/quarantine/` — license could not be verified without assumptions. Manifest is now the ground truth on disk and pushed to GitHub (am-claw01/absentmind-studio). harvest_loop.py is running in background (proc_f5b8d2fb628e), continuously scraping Kenney (51 packs) and OGA (38 sources) and pipelining new sprites. Key architectural change confirmed: SNES hardware strictness removed from pipeline — aesthetic-first, `--snes-strict` is opt-in export filter only (decision logged). Session protocol updated this session: session boundary rules added (CHANGE-026), /checkpoint command implemented (CHANGE-028), AGENT_SKILL.md mirrored to repo as canonical version. Phase 4 remains blocked pending Kyle's architecture review (Rule 6 — PHASE4_ARCHITECTURE_REVIEW: PENDING). No blockers open.
+
+---

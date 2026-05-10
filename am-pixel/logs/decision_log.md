@@ -57,3 +57,39 @@ Reasoning log for **non-mechanical** decisions (CHANGE-027). Primary instrument 
 **Reversible:** Yes.
 
 ---
+
+## 2026-05-10 | Phase 3 | ProcessDeviation
+
+**Decision:** Mirror AGENT_SKILL.md into the repository as `am-pixel/AGENT_SKILL.md`, treating the repo copy as canonical source of truth and the Hermes copy as a mirror.
+**Governing Rule:** OPENCLAW_PROMPT Rule 11 (session startup protocol); CHANGE-026 (session logging); general auditability principle
+**Alternatives Considered:** (A) Keep skill only in Hermes `~/.hermes/skills/` — not under version control, lost on reinstall, not auditable. (B) Mirror to repo (chosen) — git history tracks every change, survives framework changes, Kyle can inspect and audit the exact rules governing OpenClaw behavior.
+**Rationale:** The skill is the document that prevents drift. Putting it under version control means changes to agent behavior are traceable, reviewable, and recoverable. The repo copy is updated first; Hermes copy is synced after.
+**Confidence:** High
+**Risk Level:** Low
+**Reversible:** Yes
+
+---
+
+## 2026-05-10 | Phase 3 | Architecture
+
+**Decision:** Implement `/checkpoint` command — re-reads Constitution + phase_gates + BLOCKERS, outputs alignment confirmation to chat, and appends a timestamped entry to `logs/checkpoint_log.md`.
+**Governing Rule:** CONSTITUTION Rules 1–9 (all); CHANGE-028 (structural enforcement); user-identified risk: mid-session drift in long sessions
+**Alternatives Considered:** (A) Chat-only confirmation (no disk write) — not auditable, lost in scrollback. (B) Cron-based auto-checkpoint — autonomous, but no human trigger. (C) On-demand command with disk write (chosen) — human-controlled, auditable, append-only log.
+**Rationale:** The disk append is the critical part. A checkpoint that only prints to chat provides no persistent record. Writing to `checkpoint_log.md` means the alignment history is as auditable as the decision log and session log. Kyle can run `/checkpoint` whenever a session runs long and get both immediate confirmation and a permanent record.
+**Confidence:** High
+**Risk Level:** Low
+**Reversible:** Yes
+
+---
+
+## 2026-05-10 | Phase 3 | ProcessDeviation
+
+**Decision:** Add session boundary rules to AGENT_SKILL.md and startup protocol: write fresh session_log.md entry on compaction events, phase transitions, architectural decisions, and human-raised flags — not only at session start.
+**Governing Rule:** CHANGE-026 (session logging); CHANGE-028 (structural enforcement); CONSTITUTION Rule 9 (human override authority)
+**Alternatives Considered:** (A) Session start only (prior behavior) — misses mid-session resets caused by compaction or major corrections. (B) Every tool call — too granular, noisy. (C) Defined trigger events (chosen) — compaction, phase transition, architectural change, human correction. Covers the cases where drift is most likely without creating log noise.
+**Rationale:** Context compaction is the primary drift risk in long sessions. If compaction occurs and I don't re-anchor, I may resume with stale assumptions. The session boundary rule forces a re-read of Constitution + phase_gates + BLOCKERS at every major inflection point — not just at session open.
+**Confidence:** High
+**Risk Level:** Low
+**Reversible:** Yes
+
+---
