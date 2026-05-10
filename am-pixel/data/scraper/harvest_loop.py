@@ -54,8 +54,6 @@ DATA_DIR      = SCRIPT_DIR.parent.resolve()
 PROJECT_ROOT  = DATA_DIR.parent.resolve()
 RAW_DIR       = DATA_DIR / "raw" / "sprites"
 MANIFEST_PATH = DATA_DIR / "TRAINING_PROVENANCE_MANIFEST.json"
-CORPUS_TRAIN  = DATA_DIR / "corpus" / "train"
-CORPUS_VAL    = DATA_DIR / "corpus" / "validation"
 STATS_PATH    = DATA_DIR / "corpus_stats.md"
 LOG_PATH      = SCRIPT_DIR / "harvest_loop.log"
 
@@ -66,6 +64,17 @@ sys.path.insert(0, str(DATA_DIR))
 DELAY = 1.5   # seconds between HTTP requests
 CYCLE_PAUSE = 120  # seconds between full harvest cycles
 VAL_RATIO = 0.10
+
+# ── Batch separation ────────────────────────────────────────────────────────
+# Batch 1 (corpus/train, corpus/validation) = original sources scraped before
+#          2026-05-10 morning — baseline dataset, ready for curation.
+# Batch 2 (corpus/batch2/train, corpus/batch2/validation) = new sources added
+#          2026-05-10+ — kept separate for independent quality evaluation before
+#          merging into the main training set.
+# Set CORPUS_BATCH = 2 to route new pipeline output to batch2.
+CORPUS_BATCH  = 2
+CORPUS_TRAIN  = DATA_DIR / "corpus" / ("train" if CORPUS_BATCH == 1 else "batch2/train")
+CORPUS_VAL    = DATA_DIR / "corpus" / ("validation" if CORPUS_BATCH == 1 else "batch2/validation")
 
 # ── Logging ────────────────────────────────────────────────────────────────
 def log(msg: str) -> None:
@@ -428,12 +437,12 @@ def scrape_oga_direct(raw_dir: Path, known: set[str]) -> list[Path]:
 # ── Pipeline ───────────────────────────────────────────────────────────────
 def run_pipeline_on(pngs: list[Path], manifest: list[dict]) -> dict:
     """Process a batch of new PNGs through the pipeline."""
-    from extractor            import extract_sheet
-    from indexer              import index_sprite
-    from pixel_classifier     import classify_sprite
-    from sequence_reorderer   import reorder_sprite, save_sequence
+    from extractor             import extract_sheet
+    from indexer               import index_sprite
+    from pixel_classifier      import classify_sprite, get_distribution
+    from sequence_reorderer    import reorder_sprite, save_sequence
     from sheet_type_classifier import classify_sheet
-    from view_pair_detector   import find_candidate_pairs
+    from view_pair_detector    import find_candidate_pairs
 
     CORPUS_TRAIN.mkdir(parents=True, exist_ok=True)
     CORPUS_VAL.mkdir(parents=True, exist_ok=True)
@@ -555,10 +564,40 @@ def run_pipeline_on(pngs: list[Path], manifest: list[dict]) -> dict:
             # ── Stages 2-4: Index → Classify → Reorder (all sheet types) ──
             for i, sp in enumerate(extracted_pngs):
                 try:
-                    indexed = index_sprite(sp)
-                    classified = classify_sprite(sp)
-                    sequence = reorder_sprite(indexed)
-                    save_sequence(sequence, out_dir / f"sprite_{i:04d}_seq.json")
+                    stem        = sp.stem
+                    sprite_json = out_dir / f"{stem}.json"
+                    cat_json    = out_dir / f"{stem}_cat.json"
+                    seq_json    = out_dir / f"{stem}_seq.json"
+
+                    # Stage 2: index
+                    idx_result = index_sprite(str(sp), str(sprite_json))
+                    if idx_result is None:
+                        stats["errors"] += 1
+                        continue
+
+                    w          = idx_result["width"]
+                    h          = idx_result["height"]
+                    flat       = idx_result["index_grid"]
+                    index_grid = [flat[row * w: row * w + w] for row in range(h)]
+
+                    # Stage 3: classify
+                    cat_grid = classify_sprite(index_grid, w, h, five_category=False)
+                    dist     = get_distribution(cat_grid)
+                    flat_cat = [c for row in cat_grid for c in row]
+                    cat_data = {
+                        "sprite_id":     idx_result.get("sprite_id", stem),
+                        "width":         w, "height": h,
+                        "five_category": False,
+                        "category_grid": flat_cat,
+                        "distribution":  dist,
+                    }
+                    cat_json.parent.mkdir(parents=True, exist_ok=True)
+                    with open(cat_json, "w", encoding="utf-8") as fh:
+                        json.dump(cat_data, fh, indent=2)
+
+                    # Stage 4: reorder
+                    sequence = reorder_sprite(index_grid, cat_grid, w, h)
+                    save_sequence(sequence, str(seq_json))
                     stats["sprites"] += 1
                 except Exception as e:
                     stats["errors"] += 1
@@ -571,8 +610,15 @@ def run_pipeline_on(pngs: list[Path], manifest: list[dict]) -> dict:
 # ── Stats update ───────────────────────────────────────────────────────────
 def update_stats(manifest: list[dict], pipeline_stats: dict) -> None:
     total = len(manifest)
-    raw_count = len(list(RAW_DIR.rglob("*.png")))
-    corpus_count = len(list(CORPUS_TRAIN.rglob("*.json"))) + len(list(CORPUS_VAL.rglob("*.json")))
+    raw_count    = len(list(RAW_DIR.rglob("*.png")))
+    batch1_train = DATA_DIR / "corpus" / "train"
+    batch2_train = DATA_DIR / "corpus" / "batch2" / "train"
+    corpus_count = (len(list(CORPUS_TRAIN.rglob("*.json"))) +
+                    len(list(CORPUS_VAL.rglob("*.json"))))
+    batch1_count = (len(list(batch1_train.rglob("*_seq.json")))
+                    if batch1_train.exists() else 0)
+    batch2_count = (len(list(batch2_train.rglob("*_seq.json")))
+                    if batch2_train.exists() else 0)
 
     content = f"""# AM Pixel Corpus Stats
 
@@ -581,9 +627,11 @@ def update_stats(manifest: list[dict], pipeline_stats: dict) -> None:
 ## Current Totals
 - **Raw sprites on disk:** {raw_count:,}
 - **Provenance manifest entries:** {total:,}
-- **Corpus sequence files:** {corpus_count:,}
+- **Corpus sequence files (active batch):** {corpus_count:,}
+- **Batch 1 sequences (original corpus):** {batch1_count:,}
+- **Batch 2 sequences (new sources 2026-05-10+):** {batch2_count:,}
 
-## Last Pipeline Pass
+## Last Pipeline Pass (Batch {CORPUS_BATCH})
 - Sheets processed: {pipeline_stats.get('sheets', 0):,}
 - Sprites sequenced: {pipeline_stats.get('sprites', 0):,}
 - Character sheets: {pipeline_stats.get('character_sheets', 0):,}
