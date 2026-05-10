@@ -48,14 +48,14 @@ Date completed: 2026-05-09
 Evidence: See individual gate items above.
 
 ## Phase 1 — Boot Training
-- [ ] HARDWARE_CONSTRAINTS.md — 6+ platforms documented
-- [ ] REFERENCE_GAMES.md — 40+ games, 6+ platforms, each with annotated analysis
-- [ ] RESOURCE_LIBRARY.md — 20+ resources rated 7+
-- [ ] PIXEL_ART_THEORY.md — 20+ evidenced universal principles
-- [ ] MISTAKE_TAXONOMY.md — 15+ failure modes with corrective principles
-- [ ] EVALUATION_RUBRIC.md — complete, measurable, evidenced
-Date completed:
-Evidence:
+- [x] HARDWARE_CONSTRAINTS.md — 6 platforms documented (SNES, NES, Genesis, GB/GBC, PS1, GBA)
+- [x] REFERENCE_GAMES.md — 52 games across 8 platforms, all annotated
+- [x] RESOURCE_LIBRARY.md — 25 resources rated 7-10
+- [x] PIXEL_ART_THEORY.md — 25 evidenced universal principles
+- [x] MISTAKE_TAXONOMY.md — 19 failure modes with corrective principles and tool hooks
+- [x] EVALUATION_RUBRIC.md — complete, measurable, matches SPEC §8 exactly
+Date completed: 2026-05-09
+Evidence: All 6 documents written to knowledge/ directory; verified present with line counts 174-553 lines each.
 
 ## Phase 2 — Style Bible
 Date completed:
