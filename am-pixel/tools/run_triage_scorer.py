@@ -100,8 +100,14 @@ def score_one(png: Path, sprite_json: Path | None) -> dict:
         bucket = "C_autoreject"
 
     bd = result.get("breakdown", {})
+    # Use relative path as sprite_id to avoid cross-sheet stem collisions
+    try:
+        rel_id = str(png.resolve().relative_to((PROJECT_ROOT / "data" / "corpus" / "train").resolve()))
+    except ValueError:
+        rel_id = str(png)
+
     return {
-        "sprite_id":          png.stem,
+        "sprite_id":          rel_id,
         "source_path":        str(png),
         "sheet_dir":          str(png.resolve().parent.relative_to((PROJECT_ROOT / "data" / "corpus" / "train").resolve())),
         "total_score":        score,
@@ -179,7 +185,8 @@ def copy_to_bucket(entry: dict) -> None:
     dest = bucket_dir / entry["sheet_dir"] / src.name
     dest.parent.mkdir(parents=True, exist_ok=True)
     if not dest.exists():
-        shutil.copy2(src, dest)
+        # Use raw bytes write — shutil.copy fails on NTFS (WSL permission issue)
+        dest.write_bytes(src.read_bytes())
 
 
 def main() -> None:
@@ -198,7 +205,13 @@ def main() -> None:
     already_done = len(scores)
     print(f"Resuming: {already_done:,} already scored, {len(all_pngs)-already_done:,} remaining")
 
-    to_score = [p for p in all_pngs if p.stem not in scores]
+    corpus_root = (PROJECT_ROOT / "data" / "corpus" / "train").resolve()
+    def make_id(p: Path) -> str:
+        try:
+            return str(p.resolve().relative_to(corpus_root))
+        except ValueError:
+            return str(p)
+    to_score = [p for p in all_pngs if make_id(p) not in scores]
     if args.limit:
         to_score = to_score[: args.limit]
     print(f"Scoring {len(to_score):,} sprites with {args.workers} workers...")
@@ -216,6 +229,9 @@ def main() -> None:
             try:
                 entry = fut.result()
                 scores[entry["sprite_id"]] = entry
+                # Copy inline immediately — don't wait for full scoring pass
+                if not args.skip_copy:
+                    copy_to_bucket(entry)
                 done += 1
                 if done % save_every == 0 or done == len(to_score):
                     save_scores(scores)
@@ -226,12 +242,14 @@ def main() -> None:
 
     print("\nRunning anomaly detection...")
     scores = apply_anomaly_detection(scores)
-    save_scores(scores)
-
+    # Re-copy any sprites whose bucket changed due to anomaly detection
     if not args.skip_copy:
-        print("Copying sprites to review buckets...")
+        print("Re-routing anomaly sprites to D bucket...")
+        anomalies = [e for e in scores.values() if e.get("bucket") == "D_anomaly"]
+        print(f"  {len(anomalies)} anomalies to re-route")
         with ThreadPoolExecutor(max_workers=args.workers) as ex:
-            list(ex.map(copy_to_bucket, scores.values()))
+            list(ex.map(copy_to_bucket, anomalies))
+    save_scores(scores)
 
     # Summary
     bucket_counts = defaultdict(int)

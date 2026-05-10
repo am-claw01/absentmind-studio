@@ -120,7 +120,7 @@ def api_decide():
             # Handle collisions
             if dest.exists():
                 dest = GOLDEN_DIR / f"{src.stem}_{sprite_id[:6]}{src.suffix}"
-            shutil.copy2(src, dest)
+            dest.write_bytes(src.read_bytes())  # shutil.copy fails on NTFS/WSL
 
             manifest = load_golden_manifest()
             manifest.append({
