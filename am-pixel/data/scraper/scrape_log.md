@@ -573,3 +573,57 @@ Runs and counts.
 2026-05-09T23:28:59.016973   HTTP 404
 2026-05-09T23:28:59.041987 
 [Kenney] rpg-base
+2026-05-09T23:29:07.419993   ✅ 233 sprites
+2026-05-09T23:29:07.441369 
+[Kenney] sci-fi-platformer
+2026-05-09T23:29:08.905941   HTTP 404
+2026-05-09T23:29:08.931704 
+[Kenney] creature-pack
+2026-05-09T23:29:10.364051   HTTP 404
+2026-05-09T23:29:10.384862 
+[Kenney] roguelike-rpg-pack
+2026-05-09T23:29:11.979063   ✅ 5 sprites
+2026-05-09T23:29:11.996914 
+[Kenney] top-down-tanks-redux
+2026-05-09T23:29:13.429946   HTTP 404
+2026-05-09T23:29:13.454614 
+[Kenney] monochrome-rpg
+2026-05-09T23:29:24.989431   ✅ 427 sprites
+2026-05-09T23:29:25.011572 
+[Kenney] input-prompts-pixel-16
+2026-05-09T23:29:26.501719   HTTP 404
+2026-05-09T23:29:26.521243 
+[Kenney] medieval-rts
+2026-05-09T23:29:33.981315   ✅ 259 sprites
+2026-05-09T23:29:33.998570 
+[Kenney] isometric-game-assets-pixel
+2026-05-09T23:29:35.428540   HTTP 404
+2026-05-09T23:29:35.452265 
+[Kenney] pixel-platformer-blocks
+2026-05-09T23:29:42.733505   ✅ [3] Dungeon Crawl 32x32 tiles: 3043 PNGs
+2026-05-09T23:29:45.711505   ✅ 334 sprites
+2026-05-09T23:29:45.732910 
+[Kenney] pixel-platformer-characters
+2026-05-09T23:29:46.762064   ✅ [4] Dungeon tileset: 3 PNGs
+2026-05-09T23:29:47.162556   HTTP 404
+2026-05-09T23:29:47.179335 
+[Kenney] ui-pack-rpg-expansion
+2026-05-09T23:29:50.512051   ✅ 90 sprites
+2026-05-09T23:29:50.530333 
+[OGA] dawnlike
+2026-05-09T23:29:50.628172   ✅ [5] A blocky dungeon: 3 PNGs
+2026-05-09T23:29:55.828500   ✅ [6] The Field of the Floating Islands: 5 PNGs
+2026-05-09T23:29:56.006746   ✅ 97 sprites
+2026-05-09T23:29:56.021870 
+[OGA] tiny16
+2026-05-09T23:30:01.230689   HTTP 404: https://github.com/arianne/stendhal/blob/bbd2e01/tiled/tileset/furniture/light/lamp_blue.png
+2026-05-09T23:30:02.857859   ✅ [7] Mage City Arcanos: 3 PNGs
+2026-05-09T23:30:08.111767   ✅ 8 sprites
+2026-05-09T23:30:08.131753 
+[OGA] rpg_tiles
+2026-05-09T23:30:17.451594   ✅ 5 sprites
+2026-05-09T23:30:17.468060 
+[OGA] fantasy16
+2026-05-09T23:30:25.307154   ✅ 5 sprites
+2026-05-09T23:30:25.329098 
+[OGA] broad_tileset

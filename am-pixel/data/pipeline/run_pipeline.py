@@ -7,8 +7,8 @@ Outputs to data/corpus/train/ and data/corpus/validation/
 import json, sys, random
 from pathlib import Path
 
-BASE     = Path(__file__).parent.parent
-RAW_DIR  = BASE / "data" / "raw" / "sprites"
+BASE     = Path(__file__).parent.parent.parent  # data/pipeline/ -> data/ -> am-pixel/
+RAW_DIR  = BASE / "data" / "raw" / "sprites"  # correct path
 TRAIN    = BASE / "data" / "corpus" / "train"
 VAL      = BASE / "data" / "corpus" / "validation"
 STATS    = BASE / "data" / "corpus_stats.md"
