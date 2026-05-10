@@ -41,6 +41,12 @@ Implement Option A immediately (positional metadata is already being written). D
 
 **Options:** See four options above. Kyle's input required.
 
-**Status:** OPEN — awaiting human decision
+**Status:** RESOLVED — D→C path adopted, awaiting Phase 4 empirical evaluation
+
+**Resolution (2026-05-10):** Kyle adopted the D→C path. Option D (positional metadata — `grid_x/grid_y` in `tileset_meta.json`) is the active Phase 3 implementation. Option C (DNA-style tileset signatures) is the committed architectural destination, with the exact format deferred until Phase 4 empirical evaluation. Tileset DNA format will be finalized in `am-pixel/SPEC_PENDING_032.md` after Phase 4 training results are available.
+
+**Decision log reference:** `logs/decision_log.md` — Phase 3 | Architecture | D→C path entry (2026-05-10)
+**Spec placeholder:** `am-pixel/SPEC_PENDING_032.md`
+**Phase gate note:** Tileset generation training remains blocked pending `SPEC_PENDING_032.md` finalization. Character training is unaffected and proceeds independently. `edge_compatibility: "pending_spec_decision"` flag in `tileset_meta.json` files remains accurate — path adopted but format pending.
 
 ---

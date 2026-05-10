@@ -129,3 +129,19 @@ Reasoning log for **non-mechanical** decisions (CHANGE-027). Primary instrument 
 **Reversible:** Yes.
 
 ---
+
+## 2026-05-10 | Phase 3 | Architecture
+
+**Decision:** Adopt D→C path for tileset edge compatibility (CHANGE-032). Option D (positional metadata only, already active via `grid_x/grid_y` in `tileset_meta.json`) is the Phase 3 implementation. Option C (DNA-style tileset signatures) is the committed architectural destination, with exact format deferred until Phase 4 empirical evaluation.
+**Governing Rule:** SPEC §9 (DNA locking), SPEC §10 (tileset generation), CHANGE-032 (proposed); Constitution Rule 8 (accuracy first — do not commit a supervision strategy before knowing what the model needs)
+**Alternatives Considered:**
+- Option A (positional encoding, implicit learning) — already active via grid_x/grid_y. Does not commit to a supervision format. Risk: no fallback without retraining if implicit learning fails.
+- Option B (explicit edge token approach) — explicit and reliable supervision; requires SPEC §4 and §5 amendments before Phase 3 corpus finalized. Premature — commits training data format before knowing if explicit supervision is needed.
+- Option C (DNA-style edge signatures) — architecturally consistent destination; cannot be specified without knowing what edge information the model actually needs. Specifying now would be guessing.
+- Option D (hybrid: positional now, edge supervision deferred) — chosen as the path to C. Avoids committing Phase 3 training data to a supervision strategy before Phase 4 evidence. Grid position already written. If model learns edge compatibility implicitly → C carries thin signatures. If not → C incorporates Option B mechanism.
+**Rationale:** Option C is the architecturally-consistent destination — the project uses DNA-style locking for character continuity and tilesets deserve the same treatment. Option D is the empirically-honest path to get there. Specifying tileset DNA before Phase 4 evaluation means guessing the required edge information format. The Phase 4 tileset edge compatibility benchmark (added to ROADMAP) produces the empirical signal that determines the exact specification of tileset DNA. Deferring the spec until that signal exists is the correct sequence.
+**Confidence:** High
+**Risk Level:** Low — corpus continues to be collected with `edge_compatibility: "pending_spec_decision"` flag; a single grep identifies every tile needing retrofit when `SPEC_PENDING_032.md` is finalized. Character training proceeds unaffected.
+**Reversible:** Yes — `tileset_meta.json` files with `edge_compatibility: "pending_spec_decision"` can be retrofitted once spec is finalized.
+
+---

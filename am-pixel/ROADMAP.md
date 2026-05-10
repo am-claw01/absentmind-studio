@@ -277,6 +277,14 @@ The `hardware.log` baseline speed (tokens/sec on a 16×16 test sprite, logged in
   - Generate 20 battle sprites (48×64 minimum)
   - Run `dna_diff.py` separately on top half vs bottom half of each sprite
   - Log the consistency delta — if bottom half is >10% lower than top half consistently, flag for Phase 6 cross-attention upgrade
+- [ ] **Tileset edge compatibility benchmark (CHANGE-032 evaluation)**
+  - Generate tiles for partial tilesets where ground-truth neighbors exist in the corpus
+  - Run `tools/seam_validator.py` on generated tiles against their intended neighbors
+  - Log pass rate and failure mode distribution to `logs/training_log.md`
+  - **PASS threshold (≥70%):** Model learned edge compatibility implicitly → tileset DNA carries thin signatures (corner palettes + outline weight)
+  - **FAIL threshold (<70%):** Model did not learn implicitly → tileset DNA must carry explicit edge pixel tokens (Option B mechanism incorporated into DNA format)
+  - Output of this benchmark is the direct input to finalizing `am-pixel/SPEC_PENDING_032.md`
+  - See `SPEC_PENDING_032.md` and `logs/decision_log.md` (Phase 3, Architecture, D→C path entry) for full context
 - [ ] **Optional MaskGIT speed evaluation (CHANGE-011):** If generating the 100-sprite evaluation batch takes longer than 4 hours wall-clock time on available hardware, document the bottleneck and evaluate MaskGIT as an alternative architecture before proceeding to Phase 5. This gate is only triggered if speed is a demonstrated practical blocker — not a theoretical concern. Speed is not a primary project concern; accuracy is. See README.md On Speed vs. Accuracy.
 
 ### Completion Gate

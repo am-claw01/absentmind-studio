@@ -28,3 +28,17 @@ If `DRIFT_DETECTED`: stop current work, write a new session_log.md entry, correc
 ---
 
 *Initialized 2026-05-10 — CHANGE-028.*
+
+## 2026-05-10T02:09:33 | /checkpoint
+
+**Triggered by:** Kyle (manual)
+**Phase:** Phase 3 — Training Data Pipeline
+**Last gate completed:** Phase 2 — Style Bible (2026-05-09)
+**Next unchecked gate:** Phase 3 completion gate (corpus finalized, provenance complete, pipeline tools validated)
+**Open blockers:** CHANGE-032 — RESOLVED this session (D→C path adopted). No open blockers remaining.
+**Current work:** Implementing CHANGE-032 spec decision — updating BLOCKERS.md, decision_log.md, ROADMAP.md Phase 4 benchmark task, and creating SPEC_PENDING_032.md. Interrupted by context; completing now.
+**Rule governing current work:** Constitution Rule 5 (data provenance and structure committed before training); Rule 9 (human override authority — Kyle's D→C decision is binding); Rule 6 (Phase 4 architecture review gate unchanged)
+**Constitution confirmed:** yes
+**Alignment status:** ALIGNED
+
+---
