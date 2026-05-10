@@ -209,3 +209,12 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# AM Pixel — large data directories (sprites, model checkpoints — not in git)
+am-pixel/data/raw/
+am-pixel/data/corpus/
+am-pixel/model/checkpoints/
+am-pixel/model/logs/
+*.zip
+*.tar.gz
+
