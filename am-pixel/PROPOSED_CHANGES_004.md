@@ -121,3 +121,127 @@ Medium. Mislabeling is possible from keyword rules alone — some packs have amb
 
 *End of PROPOSED_CHANGES_004.md v0.1*
 *CHANGE-033 and CHANGE-034 staged for coordinated corpus pass after cleaning completes.*
+
+---
+
+## CHANGE-033 AMENDMENT v0.2 — Per-Size Threshold Table
+
+**Date:** 2026-05-11
+**Amends:** CHANGE-033 § Detection heuristic
+
+### Problem with v0.1
+
+The v0.1 implementation used a fixed 64-color threshold for sprites ≤16×16 and 128-color threshold for ≤64×64, leaving 48×48, 96×96, and 128×128 sprites unchecked. These are valid SNES-era sizes (LPC 64×64 characters, Arkanos 128×128 bosses).
+
+### Replacement: Per-Size Threshold Table
+
+Threshold is keyed on `max(width, height)` rounded up to the nearest table entry:
+
+| max(w,h) | max unique non-transparent colors |
+|---|---|
+| ≤16  | 64  |
+| ≤32  | 128 |
+| ≤48  | 192 |
+| ≤64  | 256 |
+| ≤96  | 384 |
+| ≤128 | 512 |
+| >128 | 512 (conservative cap — oversized sprites are unusual, cap stays) |
+
+**Rationale:** pixel art color budget scales sublinearly with sprite area. Threshold ≈ `max(w,h) × 4` approximates "color budget grows with detail-bearing capacity" and matches empirical observation in clean pixel art at each resolution. Non-tabled sizes round up to nearest entry.
+
+### Dry-run report addition
+
+CHANGE-033 dry-run must include empirical color-count distribution per size class:
+- count, mean, median, 95th percentile, 99th percentile, max unique colors
+- Used to validate thresholds are not over-triggering before live execution
+
+---
+
+## CHANGE-034 AMENDMENT v0.2 — Full Sprite Metadata Schema
+
+**Date:** 2026-05-11
+**Amends:** CHANGE-034 — expands from sprite_class/subclass only to full permanent schema
+
+### Rationale
+
+The dataset schema is a permanent contract. Fields that exist on every sprite after CHANGE-034 become required fields for every future sprite. Full schema defined once now, rather than accumulated in later passes.
+
+### Complete sprite_XXXX.json schema post CHANGE-033 + CHANGE-034
+
+**Existing (from indexer):**
+```
+width, height, palette, index_grid, transparent_index
+```
+
+**CHANGE-033 fields (format provenance):**
+```
+file_format              : "png" — always
+native_format            : "png_native" | "png_from_jpeg_suspected" | "unknown"
+color_count_at_ingestion : int — permanent record
+palette_indexed          : bool
+```
+
+**CHANGE-034 fields:**
+
+| Field | Type | Vocabulary | Coverage target | Nullable |
+|---|---|---|---|---|
+| `sprite_class` | str | character\|tileset\|environment\|effect\|ui\|item\|vehicle\|unknown | ≥85% non-unknown | No |
+| `sprite_subclass` | str\|null | extensible per class | best-effort | Yes |
+| `class_confidence` | float | 0.0–1.0 | 100% | No |
+| `class_rule_matched` | str | rule identifier | 100% | No |
+| `aesthetic_style` | str | closed (see below) | ≥70% non-unknown | No |
+| `aesthetic_subclass` | str\|null | extensible | best-effort | Yes |
+| `animation_id` | str\|null | pack+sheet+sequence id | nullable | Yes |
+| `frame_index` | int\|null | 0-indexed | null iff animation_id null | Yes |
+| `frame_count` | int\|null | total frames | null iff animation_id null | Yes |
+| `animation_type` | str\|null | walk\|idle\|attack\|cast\|death\|jump\|hurt\|other | null iff animation_id null | Yes |
+| `pose_direction` | str\|null | north\|south\|east\|west\|NE\|NW\|SE\|SW | char sprites only | Yes |
+| `view_angle` | str\|null | front\|back\|side_left\|side_right\|three_quarter\|top_down | char sprites only | Yes |
+| `rubric_score` | int | 0–100 | 100% (from scores.json) | No |
+| `rubric_bucket` | str | A\|B\|C\|D\|E | 100% (from scores.json) | No |
+| `perceptual_hash` | str | 16-char hex (pHash) | 100% | No |
+
+**aesthetic_style closed vocabulary:**
+`snes_jrpg` | `snes_action` | `snes_platformer` | `nes_classic` | `gba_jrpg` | `modern_indie` | `modern_minimal` | `monochrome` | `retro_arcade` | `isometric` | `top_down` | `unknown`
+
+### Extraction strategies
+
+**aesthetic_style:** pack-level rule engine. Kenney medieval-rts → `snes_jrpg`. LPC base → `snes_jrpg`. Kenney 1-bit → `monochrome`. Kenney platformer → `snes_platformer`. Modern indie packs → `modern_indie`. Default: `unknown`.
+
+**animation_id / frame_index / pose_direction / view_angle — LPC canonical layout:**
+LPC character sheets use a 13×21 grid (7 frames × 4 directions per animation type). Row groups (each 4 rows = N/W/S/E):
+- Rows 0–3: cast; 4–7: thrust; 8–11: walk; 12–15: slash; 16–19: shoot; row 20: hurt
+- Derivable from `sheet_y / tile_height` (row index) → animation_type + pose_direction
+- `frame_index` = `sheet_x / tile_width` within the row
+
+**Kenney character packs:** per-pack rules for known layouts. Default null for unrecognized layouts.
+
+**OGA character sheets:** layout varies. Default null unless specific pack rules defined.
+
+**Non-character sprites:** animation/pose fields always null.
+
+**perceptual_hash:** `imagehash.phash(Image.open(png_path))` → 16-char hex. Stored once at ingestion.
+
+**rubric_score / rubric_bucket:** read from `data/golden_review/scores.json` keyed by sprite_id (format: `packdir/sprite_XXXX.png`). Score 0 and bucket C/D assigned if not present (indicates pre-scoring artifact).
+
+### Coverage gates for CHANGE-034 live run
+
+- `sprite_class` non-unknown ≥ 85% — FAIL stops run
+- `aesthetic_style` non-unknown ≥ 70% — FAIL stops run
+- `rubric_score` coverage = 100% — FAIL stops run
+- `perceptual_hash` coverage = 100% — FAIL stops run
+
+### Dry-run report outputs
+
+- `data/golden_review/resolution_distribution.json` — count per (width, height) tuple
+- `data/golden_review/class_distribution.json` — count per primary class + subclass
+- 20-sprite samples per sprite_class
+- 20-sprite samples per aesthetic_style (where count ≥ 20)
+- 20-sprite samples from animation sequences (animation_id non-null)
+- Coverage table for all fields
+
+---
+
+*PROPOSED_CHANGES_004.md v0.2 — amendments to CHANGE-033 and CHANGE-034*
+*v0.1: initial CHANGE-033 and CHANGE-034 definitions*
+*v0.2: per-size threshold table (CHANGE-033), full schema expansion (CHANGE-034)*

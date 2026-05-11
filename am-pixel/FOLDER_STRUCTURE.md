@@ -90,6 +90,13 @@ am-pixel/
 │   │       └── .gitkeep
 │   ├── TRAINING_PROVENANCE_MANIFEST.json  ← IMMUTABLE LEGAL LEDGER — initialized as [] in Phase 0, never deleted. Every training sprite logged with source, license, pHash, tier. (CHANGE-023)
 │   ├── corpus_stats.md                ← Corpus statistics log — reports Tier 1 and Tier 2 separately
+│   ├── golden_review/                 ← Triage and cleaning outputs
+│   │   ├── scores.json                ← Per-sprite rubric scores from triage scorer
+│   │   ├── corpus_cleaning_log.jsonl  ← Deletion log from clean_corpus.py — permanent record
+│   │   ├── format_integrity_log.jsonl ← Per-sprite format provenance write log (CHANGE-033)
+│   │   ├── class_labeling_log.jsonl   ← Per-sprite labeling write log (CHANGE-034)
+│   │   ├── resolution_distribution.json ← Count per (width, height) tuple — CHANGE-034 dry-run output
+│   │   └── class_distribution.json   ← Count per sprite_class + subclass — CHANGE-034 dry-run output
 │   └── quarantine/                    ← Isolated asset pools — physically separated from training corpus, fully recoverable
 │       ├── quarantine_manifest.jsonl  ← Append-only log of every quarantined sprite: pack, reason, destination
 │       ├── texture_packs/             ← Uniform-color texture tiles — not character sprites; potential future texture generation track
@@ -109,8 +116,9 @@ am-pixel/
 │   ├── outline_checker.py             ← Identifies pure black outlines (must be local color)
 │   ├── anti_aliasing_detector.py      ← Flags sub-pixel blending (not allowed in SNES style)
 │   ├── clean_corpus.py                ← Corpus artifact cleaning pass — quarantines and deletes pre-extraction slicing artifacts
-│   ├── format_integrity.py            ← JPEG contamination detection + format_provenance field writer (CHANGE-033)
-│   ├── class_labeler.py               ← Multi-class semantic tagger — writes sprite_class + sprite_subclass into sprite_XXXX.json (CHANGE-034)
+│   ├── format_integrity.py            ← JPEG contamination detection + format_provenance field writer; per-size threshold table (CHANGE-033 v0.2)
+│   ├── class_labeler.py               ← Full metadata tagger — writes sprite_class, aesthetic_style, animation fields, rubric fields, perceptual_hash into sprite_XXXX.json (CHANGE-034 v0.2)
+│   ├── schema_validator.py            ← Validates all required schema fields present in every sprite_XXXX.json; zero missing fields gate before Phase 4 (CHANGE-034)
 │   ├── seam_validator.py              ← Tests all four edges of tiles for seamless tiling
 │   ├── tileset_anchor_extractor.py    ← Derives Tileset Anchor from approved seed tiles
 │   ├── layer_compositor.py            ← Assembles parallax layers at scroll offsets for evaluation

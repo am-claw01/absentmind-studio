@@ -979,7 +979,7 @@ The web UI skeleton (working chat panel + image preview + approve/reject control
 
 A sprite without a manifest entry does not get trained on. No exceptions.
 
-### 15.1 Format Provenance (CHANGE-033)
+### 15.1 Format Provenance (CHANGE-033, amended v0.2)
 
 Every `sprite_XXXX.json` file in the corpus must include a `format_provenance` block:
 
@@ -992,44 +992,76 @@ Every `sprite_XXXX.json` file in the corpus must include a `format_provenance` b
 }
 ```
 
-- **`file_format`**: always `"png"` — non-PNG assets are rejected at scrape time; this field documents the check occurred
-- **`native_format`**: `"png_from_jpeg_suspected"` if unique non-transparent color count exceeds the resolution-dependent upper bound (64 colors for ≤16×16 sprites, 128 for ≤64×64); `"png_native"` if within bound; `"unknown"` if metadata unavailable
-- **`color_count_at_ingestion`**: unique non-transparent color count at initial processing — permanent record, never updated retroactively
-- **`palette_indexed`**: `true` if source PNG uses palette-indexed color mode, `false` if RGBA/RGB
+- **`file_format`**: always `"png"` — non-PNG assets are rejected at scrape time
+- **`native_format`**: determined by per-size threshold table (see below)
+- **`color_count_at_ingestion`**: unique non-transparent color count at initial processing — permanent record, never updated
+- **`palette_indexed`**: `true` if source PNG uses palette-indexed color mode
 
-Sprites flagged as `"png_from_jpeg_suspected"` are quarantined to `data/quarantine/format_suspect/` before the triage scoring or training pipeline. They are never deleted unilaterally — packs with >20% format_suspect rate require human review before permanent exclusion.
+**Per-size JPEG contamination threshold table** (keyed on `max(width, height)`):
 
-Missing `format_provenance` block in a corpus sprite is treated as a format integrity gap. `tools/format_integrity.py` performs a retroactive pass to write these fields across existing corpus entries and quarantine suspects.
-
-### 15.2 Class Labels (CHANGE-034)
-
-Every `sprite_XXXX.json` file in the corpus must include class label fields:
-
-```json
-"sprite_class": "character" | "tileset" | "environment" | "effect" | "ui" | "item" | "vehicle" | "unknown",
-"sprite_subclass": "humanoid" | "monster" | ... | null,
-"class_confidence": 0.0–1.0,
-"class_rule_matched": "pack_keyword:characters" | "path_keyword:tiles/" | "tileset_meta_present" | ...
-```
-
-**Primary classes and subclasses:**
-
-| primary | subclasses |
+| max(w,h) | suspect if unique colors exceed |
 |---|---|
-| `character` | humanoid, monster, creature, npc |
-| `tileset` | terrain, structure, dungeon, interior, exterior |
-| `environment` | tree, rock, plant, water, structure, prop |
-| `effect` | particle, projectile, explosion, magic, weather |
-| `ui` | button, icon, panel, cursor, hud |
-| `item` | weapon, armor, consumable, key_item, treasure |
-| `vehicle` | ground, air, water, space |
-| `unknown` | (no subclass) |
+| ≤16  | 64  |
+| ≤32  | 128 |
+| ≤48  | 192 |
+| ≤64  | 256 |
+| ≤96  | 384 |
+| ≤128 | 512 |
+| >128 | 512 (conservative cap) |
 
-`unknown` is a valid and required output when no rule fires confidently. Silent miscategorization is never acceptable — `unknown` with logged confidence is always preferred over a forced label.
+Non-tabled sizes round up to the nearest table entry. Sprites exceeding the bound for their resolution are flagged `"png_from_jpeg_suspected"` and quarantined to `data/quarantine/format_suspect/` — never deleted. Packs with >20% format_suspect rate require human review before permanent exclusion.
 
-**Phase 4 gate:** Unknown class rate must be below 15% across the corpus before any training run begins. If the rate exceeds 15% after the initial labeling pass, the specific packs driving unknowns are reported and rule additions are proposed for human review before re-running.
+Missing `format_provenance` block is a format integrity gap. `tools/format_integrity.py` performs retroactive and live-run passes.
 
-Missing `sprite_class` field in a corpus sprite is treated as a pipeline compliance violation. `tools/class_labeler.py` performs the retroactive labeling pass.
+### 15.2 Full Sprite Metadata Schema (CHANGE-034, amended v0.2)
+
+Every `sprite_XXXX.json` after CHANGE-034 contains all of the following fields. This is the permanent schema contract — all future sprites entering `data/corpus/train/` must populate every field. `unknown` and `null` are valid values for fields with those allowances; **missing field is an error condition**.
+
+**Existing fields (from indexer):** `sprite_id`, `width`, `height`, `palette`, `index_grid`, `transparent_index`
+
+**Format provenance fields (CHANGE-033):** `file_format`, `native_format`, `color_count_at_ingestion`, `palette_indexed`
+
+**Semantic and quality fields (CHANGE-034):**
+
+| Field | Type | Vocabulary | Coverage target | Nullable |
+|---|---|---|---|---|
+| `sprite_class` | str | character \| tileset \| environment \| effect \| ui \| item \| vehicle \| **unknown** | ≥85% non-unknown | No |
+| `sprite_subclass` | str\|null | extensible per class (see below) | best-effort | Yes |
+| `class_confidence` | float | 0.0–1.0 | 100% | No |
+| `class_rule_matched` | str | rule identifier string | 100% | No |
+| `aesthetic_style` | str | closed vocabulary (see below) | ≥70% non-unknown | No |
+| `aesthetic_subclass` | str\|null | extensible | best-effort | Yes |
+| `animation_id` | str\|null | `{pack}:{sheet}:{seq_id}` | nullable | Yes |
+| `frame_index` | int\|null | 0-indexed position in sequence | null iff animation_id null | Yes |
+| `frame_count` | int\|null | total frames in sequence | null iff animation_id null | Yes |
+| `animation_type` | str\|null | walk\|idle\|attack\|cast\|death\|jump\|hurt\|other | null iff animation_id null | Yes |
+| `pose_direction` | str\|null | north\|south\|east\|west\|NE\|NW\|SE\|SW | character sprites with detectable direction | Yes |
+| `view_angle` | str\|null | front\|back\|side_left\|side_right\|three_quarter\|top_down | character sprites with detectable view | Yes |
+| `rubric_score` | int | 0–100 | 100% | No |
+| `rubric_bucket` | str | A\|B\|C\|D\|E | 100% | No |
+| `perceptual_hash` | str | 16-char hex (pHash) | 100% | No |
+
+**sprite_class subclasses:**
+- `character`: humanoid, monster, creature, npc
+- `tileset`: terrain, structure, dungeon, interior, exterior
+- `environment`: tree, rock, plant, water, structure, prop
+- `effect`: particle, projectile, explosion, magic, weather
+- `ui`: button, icon, panel, cursor, hud
+- `item`: weapon, armor, consumable, key_item, treasure
+- `vehicle`: ground, air, water, space
+
+**aesthetic_style closed vocabulary:**
+`snes_jrpg` | `snes_action` | `snes_platformer` | `nes_classic` | `gba_jrpg` | `modern_indie` | `modern_minimal` | `monochrome` | `retro_arcade` | `isometric` | `top_down` | `unknown`
+
+**Phase 4 gates (all required before training):**
+1. `sprite_class` non-unknown ≥ 85%
+2. `aesthetic_style` non-unknown ≥ 70%
+3. `rubric_score` coverage = 100%
+4. `perceptual_hash` coverage = 100%
+5. Unknown rate > 15% → stop, report driving packs, propose rule additions, re-run after approval
+6. Schema validation pass (`tools/schema_validator.py`) — zero missing fields
+
+Missing `sprite_class` is a pipeline compliance violation. `tools/class_labeler.py` performs retroactive and live-run passes.
 
 ---
 

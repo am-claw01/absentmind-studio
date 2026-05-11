@@ -281,3 +281,36 @@ Deletion is atomic per sprite: `.png`, `.json`, and `_seq.json` deleted together
 **Reversible:** Yes — labels are fields in sprite_XXXX.json, correctable without re-extraction.
 
 ---
+
+## Architecture — CHANGE-033 v0.2 Per-Size Threshold Amendment
+**Date:** 2026-05-11
+**Type:** Architecture
+**Trigger:** CHANGE-033 v0.1 used fixed 64/128 color thresholds, leaving 48×48, 64×64, 96×96, and 128×128 sprites (LPC characters, Arkanos bosses) unchecked for JPEG contamination.
+**Decision:** Replace fixed thresholds with per-size table keyed on max(width, height): ≤16→64, ≤32→128, ≤48→192, ≤64→256, ≤96→384, ≤128→512, >128→512 cap. Add empirical color-count distribution per size class to dry-run report for threshold validation before live execution.
+**Rationale:** Pixel art color budget scales sublinearly with sprite area. Threshold ≈ max(w,h)×4 matches empirical observation across clean pixel art at each resolution. Non-tabled sizes round up to nearest entry.
+**Reversible:** Yes (quarantine only).
+
+---
+
+## Architecture — CHANGE-034 v0.2 Full Schema Expansion
+**Date:** 2026-05-11
+**Type:** Architecture
+**Trigger:** The sprite_XXXX.json schema after CHANGE-034 becomes the permanent contract for all future corpus sprites. Building the full schema once (rather than incrementally) avoids multiple retroactive passes and ensures the training contract is complete before Phase 4.
+**Decision:** Expand CHANGE-034 from sprite_class/subclass only to full permanent schema: 15 new fields covering semantic class (`sprite_class`, `sprite_subclass`, `class_confidence`, `class_rule_matched`), aesthetic style (`aesthetic_style`, `aesthetic_subclass`), animation/pose (`animation_id`, `frame_index`, `frame_count`, `animation_type`, `pose_direction`, `view_angle`), quality (`rubric_score`, `rubric_bucket`), and provenance (`perceptual_hash`).
+
+**Field decisions:**
+
+*aesthetic_style* — pack-level rule engine. Closed vocabulary (11 values + unknown). Kenney medieval → snes_jrpg; LPC base → snes_jrpg; Kenney 1-bit → monochrome; platformer → snes_platformer; modern indie → modern_indie. Coverage target ≥70%.
+
+*animation_id / frame_index / frame_count / animation_type / pose_direction / view_angle* — LPC canonical layout (13×21 grid, deterministic from sheet_y/tile_height → row → animation_type + direction; sheet_x/tile_width → frame_index). Kenney known layouts rule-based. OGA default null. Non-character default null. Nullable fields — null is correct for non-animated sprites.
+
+*rubric_score / rubric_bucket* — read from existing scores.json (493K entries pre-clean, sprite_id format: packdir/sprite_XXXX.png). 100% coverage target — sprites not present in scores.json assigned score 0 / bucket C (pre-scoring artifact).
+
+*perceptual_hash* — imagehash.phash() → 16-char hex. 100% coverage. Stored once, enables future duplicate detection without re-scan.
+
+**Coverage gates for CHANGE-034 live run (all required before Phase 4):** sprite_class ≥85%, aesthetic_style ≥70%, rubric_score 100%, perceptual_hash 100%. If any gate fails, stop and report before re-running.
+
+**Governing Rule:** Constitution Rule 4 (quality gate — complete schema required before training); Rule 5 (provenance — perceptual_hash is provenance data); Rule 9 (user decision — schema scope defined explicitly)
+**Reversible:** Yes — all fields writable without re-extraction.
+
+---

@@ -468,5 +468,22 @@ Status: CHANGE-033 and CHANGE-034 implemented (tools built, pipeline updated). C
 
 ---
 
-*AM Pixel Bible Changelog v1.6 | Absentmind Studio*
+## PROPOSED_CHANGES_004.md v0.2 — Schema amendments
+
+### v0.2 — 2026-05-11 — Per-size threshold + full schema expansion
+- CHANGE-033 amendment: fixed threshold replaced with per-size threshold table (max(w,h) → color bound: 16→64, 32→128, 48→192, 64→256, 96→384, 128→512). Dry-run report now includes empirical color-count distribution per size class.
+- CHANGE-034 amendment: scope expanded from sprite_class/subclass only to full permanent metadata schema. New fields: `aesthetic_style`, `aesthetic_subclass`, `animation_id`, `frame_index`, `frame_count`, `animation_type`, `pose_direction`, `view_angle`, `rubric_score`, `rubric_bucket`, `perceptual_hash`. Coverage gates added: sprite_class ≥85%, aesthetic_style ≥70%, rubric_score 100%, perceptual_hash 100%.
+
+Documents updated this session (2026-05-11):
+- `SPEC.md` §15.1 — per-size threshold table replaces fixed bound; version bumped to 1.7
+- `SPEC.md` §15.2 — full permanent schema table with all 15 CHANGE-034 fields, controlled vocabularies, coverage targets, Phase 4 gates, extraction strategies
+- `FOLDER_STRUCTURE.md` — golden_review/ subtree documented (scores.json, logs, distribution outputs); schema_validator.py added; format_integrity.py and class_labeler.py descriptions updated
+- `PROPOSED_CHANGES_004.md` — v0.2 amendments documented
+- `logs/decision_log.md` — Architecture entries for per-size threshold, aesthetic_style, animation/pose fields, rubric preservation, perceptual_hash
+
+Status: spec amendments complete. CHANGE-033 dry-run is next step (awaiting execution after doc commit).
+
+---
+
+*AM Pixel Bible Changelog v1.7 | Absentmind Studio*
 *v1.0 compiled retroactively | ongoing entries in real time*

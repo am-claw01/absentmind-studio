@@ -49,20 +49,30 @@ QUARANTINE   = PROJECT_ROOT / "data" / "quarantine" / "format_suspect"
 QMANIFEST    = PROJECT_ROOT / "data" / "quarantine" / "quarantine_manifest.jsonl"
 FLAG_PACK_RATE = 0.20   # packs above this format_suspect rate are flagged
 
-# Color count upper bounds by pixel area
+# Per-size JPEG contamination threshold table — keyed on max(width, height)
+# Threshold ≈ max(w,h) × 4, capped at 512 for oversized sprites
+# CHANGE-033 v0.2 (amended from fixed 64/128 bounds)
 AREA_BOUNDS = [
-    (256,  64),   # ≤16×16 → max 64 unique colors
-    (4096, 128),  # ≤64×64 → max 128 unique colors
+    (16,  64),    # ≤16×16  → max 64  unique colors
+    (32,  128),   # ≤32×32  → max 128 unique colors
+    (48,  192),   # ≤48×48  → max 192 unique colors
+    (64,  256),   # ≤64×64  → max 256 unique colors
+    (96,  384),   # ≤96×96  → max 384 unique colors
+    (128, 512),   # ≤128×128 → max 512 unique colors
 ]
+BOUND_CAP = 512   # conservative cap for sprites larger than 128×128
 
 
-def color_bound(width: int, height: int) -> int | None:
-    """Return the max expected unique color count for this resolution, or None if no bound."""
-    area = width * height
-    for max_area, max_colors in AREA_BOUNDS:
-        if area <= max_area:
+def color_bound(width: int, height: int) -> int:
+    """Return the max expected unique color count for this resolution.
+    Keyed on max(width, height), rounded up to nearest table entry.
+    Always returns a bound — BOUND_CAP for oversized sprites.
+    """
+    m = max(width, height)
+    for max_dim, max_colors in AREA_BOUNDS:
+        if m <= max_dim:
             return max_colors
-    return None  # large sprites — no upper bound
+    return BOUND_CAP
 
 
 def get_palette_indexed(png_path: Path) -> bool:
@@ -112,7 +122,7 @@ def check_format(meta: dict, png_path: Path) -> dict:
     bound = color_bound(width, height)
     if color_count < 0:
         native_format = "unknown"
-    elif bound is not None and color_count > bound:
+    elif color_count > bound:
         native_format = "png_from_jpeg_suspected"
     else:
         native_format = "png_native"
@@ -166,7 +176,12 @@ def main() -> None:
     written        = 0
     pack_total:   Counter = Counter()
     pack_suspect: Counter = Counter()
+    # For empirical distribution per size class (dry-run report)
+    from collections import defaultdict
+    import statistics
+    size_class_counts: dict[str, list[int]] = defaultdict(list)  # size_key → [color_counts]
     report_every = 10_000
+    CIRCUIT_BREAKER = 0.05  # stop if format_suspect > 5% of corpus (live run only)
 
     qmanifest_fh = None
     if not dry_run:
@@ -199,9 +214,24 @@ def main() -> None:
         png_path = json_path.with_suffix(".png")
         fp = check_format(meta, png_path)
 
+        # Track empirical distribution for dry-run report
+        w = meta.get("width", 0); h = meta.get("height", 0)
+        m = max(w, h)
+        size_key = f"≤{next((d for d in [16,32,48,64,96,128] if m <= d), 999)}px"
+        if fp["color_count_at_ingestion"] >= 0:
+            size_class_counts[size_key].append(fp["color_count_at_ingestion"])
+
         if fp["native_format"] == "png_from_jpeg_suspected":
             pack_suspect[pack_name] += 1
             suspect_count += 1
+
+            # Circuit-breaker: only on live runs
+            if not dry_run and total > 0 and suspect_count / total > CIRCUIT_BREAKER:
+                print(f"\n🛑 CIRCUIT BREAKER: format_suspect count ({suspect_count:,}) "
+                      f"exceeds {CIRCUIT_BREAKER:.0%} of corpus ({total:,}). "
+                      f"Stopping at sprite {i:,}. Review before continuing.", flush=True)
+                if qmanifest_fh: qmanifest_fh.close()
+                sys.exit(1)
 
             if not dry_run:
                 # Quarantine: move .png + .json + _seq.json
@@ -262,6 +292,29 @@ def main() -> None:
             print(f"  {pack:<60}  {sus:>5,}/{tot:<5,}  ({rate:.1%})")
     else:
         print(f"\n  No packs above {FLAG_PACK_RATE:.0%} format_suspect rate")
+
+    # Empirical color-count distribution per size class (validates thresholds)
+    if size_class_counts:
+        print("\nEmpirical color-count distribution per size class (threshold validation):")
+        print(f"  {'Size class':<12}  {'Count':>7}  {'Mean':>6}  {'Median':>6}  {'p95':>6}  {'p99':>6}  {'Max':>6}  {'Threshold':>9}")
+        for size_key in sorted(size_class_counts.keys()):
+            vals = size_class_counts[size_key]
+            if not vals:
+                continue
+            vals_s = sorted(vals)
+            n = len(vals_s)
+            mean   = sum(vals_s) / n
+            median = statistics.median(vals_s)
+            p95    = vals_s[int(n * 0.95)]
+            p99    = vals_s[int(n * 0.99)]
+            vmax   = vals_s[-1]
+            # Get threshold for this size class
+            try:
+                dim = int(size_key.replace("≤","").replace("px","").replace(">999","999"))
+                bound = next((c for d,c in AREA_BOUNDS if dim <= d), BOUND_CAP)
+            except Exception:
+                bound = BOUND_CAP
+            print(f"  {size_key:<12}  {n:>7,}  {mean:>6.1f}  {median:>6.1f}  {p95:>6}  {p99:>6}  {vmax:>6}  {bound:>9}")
 
     print("=" * 60)
 

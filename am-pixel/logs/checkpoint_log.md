@@ -56,3 +56,47 @@ If `DRIFT_DETECTED`: stop current work, write a new session_log.md entry, correc
 **Alignment status:** ALIGNED
 
 ---
+
+
+---
+## /checkpoint — 2026-05-11T19:09:04Z
+
+**STATUS: ALIGNED | Phase 3**
+
+**Baseline locked:** 79,758 sprites in data/corpus/train/ (post-cleaning, zero deviation)
+**Last commit:** a3f1cc5 — CHANGE-033/034 initial tools
+**Harvest loop:** PAUSED (cycle 474, all sources exhausted)
+**Processes:** none running
+
+**IMMEDIATE TASK:** Spec amendments for CHANGE-033 (per-size threshold table) and
+CHANGE-034 (full metadata schema expansion). Must commit before CHANGE-033 dry-run.
+
+**Key facts discovered this session:**
+- scores.json: 493,193 entries (pre-clean corpus), sprite_id format = packdir/sprite_XXXX.png
+- imagehash 4.3.2 installed ✓
+- PIL available ✓
+- sprite_XXXX.json currently has: sprite_id, width, height, palette, index_grid, transparent_index
+- manifest.json has: sprite_id(int), source_sheet, sheet_x(px), sheet_y(px), width, height, output_path
+- Size distribution is heavily 16x16 (>98% of sample)
+- LPC sheet_y is pixel offset; row_index = sheet_y / tile_height → maps to LPC animation layout
+
+**CHANGE-033 amendment:** per-size threshold table (16→64, 32→128, 48→192, 64→256, 96→384, 128→512)
+Formula: threshold = max(w,h) rounded up to nearest table entry × 4. Cap at 512.
+
+**CHANGE-034 expansion:** full schema — aesthetic_style, animation_id, frame_index,
+frame_count, animation_type, pose_direction, view_angle, rubric_score, rubric_bucket,
+perceptual_hash. All fields written. Nullable fields use null.
+
+**EXECUTION GATES (sequential):**
+1. Spec amendments committed ← CURRENT
+2. CHANGE-033 dry-run + threshold validation ← NEXT
+3. CHANGE-033 live (with circuit-breaker at 5% corpus)
+4. CHANGE-034 dry-run + coverage reports
+5. CHANGE-034 live + coverage gates
+6. Schema validation pass (all fields present)
+
+**CONSTRAINTS:**
+- harvest_loop stays paused
+- No parallel execution (sequential per instructions)
+- 5% deviation gates on both passes
+- circuit-breaker: format_suspect > 5% corpus → stop and report
