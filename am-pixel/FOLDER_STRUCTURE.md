@@ -89,7 +89,14 @@ am-pixel/
 │   │   └── labeled/                   ← Bad sprite + corrected version pairs
 │   │       └── .gitkeep
 │   ├── TRAINING_PROVENANCE_MANIFEST.json  ← IMMUTABLE LEGAL LEDGER — initialized as [] in Phase 0, never deleted. Every training sprite logged with source, license, pHash, tier. (CHANGE-023)
-│   └── corpus_stats.md                ← Corpus statistics log — reports Tier 1 and Tier 2 separately
+│   ├── corpus_stats.md                ← Corpus statistics log — reports Tier 1 and Tier 2 separately
+│   └── quarantine/                    ← Isolated asset pools — physically separated from training corpus, fully recoverable
+│       ├── quarantine_manifest.jsonl  ← Append-only log of every quarantined sprite: pack, reason, destination
+│       ├── texture_packs/             ← Uniform-color texture tiles — not character sprites; potential future texture generation track
+│       ├── monochrome_packs/          ← Intentional 1-bit/monochrome art — valid style, preserved for potential monochrome generation track
+│       ├── outline_art/               ← Outline-only sprites — intentional style; potential outline/linework generation track
+│       ├── ui_elements/               ← Kenney UI elements (buttons, icons, arrows) — not sprite art; potential UI generation track
+│       └── format_suspect/            ← JPEG-contaminated or misclassified PNGs — color count exceeds resolution bound; human review required before any pack is permanently excluded (CHANGE-033)
 │
 ├── tools/                             ← Evaluation and management tooling
 │   ├── palette_validator.py           ← Checks sprite against palette constraints
@@ -101,6 +108,9 @@ am-pixel/
 │   ├── banding_detector.py            ← Detects horizontal/vertical color banding
 │   ├── outline_checker.py             ← Identifies pure black outlines (must be local color)
 │   ├── anti_aliasing_detector.py      ← Flags sub-pixel blending (not allowed in SNES style)
+│   ├── clean_corpus.py                ← Corpus artifact cleaning pass — quarantines and deletes pre-extraction slicing artifacts
+│   ├── format_integrity.py            ← JPEG contamination detection + format_provenance field writer (CHANGE-033)
+│   ├── class_labeler.py               ← Multi-class semantic tagger — writes sprite_class + sprite_subclass into sprite_XXXX.json (CHANGE-034)
 │   ├── seam_validator.py              ← Tests all four edges of tiles for seamless tiling
 │   ├── tileset_anchor_extractor.py    ← Derives Tileset Anchor from approved seed tiles
 │   ├── layer_compositor.py            ← Assembles parallax layers at scroll offsets for evaluation

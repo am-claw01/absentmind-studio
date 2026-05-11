@@ -157,3 +157,127 @@ Reasoning log for **non-mechanical** decisions (CHANGE-027). Primary instrument 
 **Reversible:** Yes
 
 ---
+
+## DataPipeline — corpus_cleaning_pass_added
+**Date:** 2026-05-10
+**Type:** DataPipeline
+**Trigger:** Initial triage review revealed grid-slicing artifacts in data/corpus/train/ — solid fills, edge slivers, near-empty tiles produced by the sheet extractor cutting on uniform grid boundaries regardless of sprite content.
+
+**Decision:** Add `tools/clean_corpus.py` corpus cleaning pass to run on data/corpus/train/ before scoring or training. Artifacts are identified by four heuristics applied to sprite metadata (no re-extraction, no raw file access):
+1. `unique_colors < 3` — solid fill or near-blank
+2. `entropy < 0.5` — near-zero pixel entropy calculated from palette distribution
+3. `transparency_ratio > 0.80` — >80% transparent pixels (empty tile)
+4. `aspect_ratio > 4.0 or < 0.25` — extreme edge sliver
+
+Deletion is atomic per sprite: `.png`, `.json`, and `_seq.json` deleted together. Every deletion logged to `data/golden_review/corpus_cleaning_log.jsonl` with pack name, sheet dir, rejection reason, and metric values. Packs with >50% deletion rate flagged for human review before their remaining sprites enter the Golden Dataset.
+
+**Forward action:** Pre-filter heuristics to be added to the extractor (`data/pipeline/sequence_reorderer.py` or `run_pipeline.py`) so future harvest runs do not accumulate artifacts. This is a post-Phase 3 housekeeping task — current priority is cleaning the existing corpus first.
+
+**Governing Rule:** Constitution Rule 4 (quality gate — below-threshold data does not enter training); Rule 5 (provenance integrity — cleaning log is part of the data provenance chain); Rule 9 (user decision — cleaning pass approved explicitly before execution)
+**Alternatives Considered:** (A) Let artifacts pass through to triage scorer — scorer would mis-bucket them (high transparency = low rubric score = C-bucket, correct outcome but wastes scorer time and pollutes triage signal). (B) Filter at training time — deferred cost, artifacts still in corpus and visible during curation UI review. (C) Clean corpus now before scoring (chosen) — cleanest provenance, scorer and curation UI only see valid sprites.
+**Confidence:** High
+**Risk Level:** Low — deletes only files matching strict artifact criteria; log provides complete audit trail; dry-run mode available for verification before commit.
+**Reversible:** No (deletions are permanent) — log retained as permanent record.
+
+---
+
+## DataPipeline — texture_packs_quarantined
+**Date:** 2026-05-10
+**Type:** DataPipeline
+**Trigger:** Corpus cleaning dry-run flagged `texture-*` packs at 85–90% deletion rate under artifact heuristics. Root cause: texture tiles have intentionally uniform color distributions — the entropy and unique_colors checks correctly identify them as non-sprite art, but deletion would permanently discard potentially useful assets.
+
+**Decision:** Quarantine all `texture-*` packs to `data/quarantine/texture_packs/` rather than delete. All three files per sprite (.png, .json, _seq.json) moved together. Quarantine manifest entry: *"Texture tiles — uniform color distribution, not character sprites, potentially useful for future texture generation track."* Assets are physically isolated from training corpus, fully recoverable, and excluded from all current scoring and curation passes.
+
+**Governing Rule:** Constitution Rule 5 (provenance integrity — quarantine is logged, not silently discarded); Rule 9 (user decision — quarantine approach approved explicitly)
+**Rationale:** Texture tiles are not sprite art and must not enter character sprite training. However, they may be valuable for a future texture/tileable-surface generation track. Quarantine preserves optionality without contaminating the current training corpus.
+**Reversible:** Yes — files physically moved to quarantine, recoverable by moving back.
+
+---
+
+## DataPipeline — ui_elements_quarantined
+**Date:** 2026-05-10
+**Type:** DataPipeline
+**Trigger:** Corpus cleaning dry-run flagged 717 single-sprite packs (pack_total == 1) at 100% deletion rate. These are Kenney UI element sheets (buttons, icons, arrows, bar segments) sliced into individual sprites — valid pixel art but not character sprites.
+
+**Decision:** Quarantine all single-sprite packs to `data/quarantine/ui_elements/` rather than delete. Quarantine manifest entry: *"Kenney UI elements — buttons, icons, arrows — not sprite art, potentially useful for future UI generation track."* Same quarantine discipline as provenance quarantine — physically isolated, not in training, fully recoverable.
+
+**Governing Rule:** Constitution Rule 5 (provenance integrity); Rule 9 (user decision — quarantine approach approved explicitly)
+**Rationale:** UI elements are not character sprites and must not enter character sprite training. They are well-crafted pixel art assets that may be useful for a UI/icon generation track. Quarantine preserves optionality.
+**Also decided:** `unique_colors` artifact threshold lowered from `< 3` to `< 2`. Two-color sprites (outline + fill) are valid SNES-style art and must not be rejected. Only truly monochrome single-color sprites are artifacts.
+**Reversible:** Yes — files physically moved to quarantine, recoverable.
+
+---
+
+## DataPipeline — monochrome_packs_quarantined
+**Date:** 2026-05-10
+**Type:** DataPipeline
+**Trigger:** Dry-run 2 flagged Kenney 1-bit-pack variants, micro-roguelike monochrome tiles, and small character sprite packs (blackMan8, blondeWoman2, greyMan8, etc.) at 100% deletion rate. Root cause: `unique_colors < 2` cannot distinguish intentional monochrome art from slicing artifacts.
+
+**Decision:** Quarantine all 1-bit/monochrome packs and small character sprite packs (detected by name pattern: `(black|blonde|brown1|brown2|grey|red)(man|woman)\d`) to `data/quarantine/monochrome_packs/`. Manifest note: *"Intentional 1-bit/monochrome art — valid pixel art style, preserved for potential monochrome generation track. Not deleted because unique_colors < 2 cannot distinguish intentional monochrome from slicing artifacts."*
+
+**Governing Rule:** Constitution Rule 5 (provenance); Rule 9 (user decision)
+**Rationale:** These are intentional art styles, not extraction failures. Deletion would permanently destroy valid pixel art. Quarantine preserves them for a potential monochrome/1-bit generation track.
+**Reversible:** Yes.
+
+---
+
+## DataPipeline — outline_art_quarantined
+**Date:** 2026-05-10
+**Type:** DataPipeline
+**Trigger:** Dry-run 2 flagged `round_outline`, `round_nodetails_outline`, `square_nodetails_outline` etc. at ~53–55% deletion rate. Outline-only sprites have few filled colors by design — `unique_colors < 2` and `entropy < 0.5` fire as false positives.
+
+**Decision:** Quarantine all packs matching `_outline` suffix to `data/quarantine/outline_art/`. Manifest note: *"Outline-only sprites — intentional art style, valid for outline generation training. Not deleted because low color count reflects style, not artifact."*
+
+**Governing Rule:** Constitution Rule 5 (provenance); Rule 9 (user decision)
+**Rationale:** Outline sprites are a valid and useful art style. May be specifically useful for training outline-generation or linework stages of a future pipeline.
+**Reversible:** Yes.
+
+---
+
+## DataPipeline — medievalTile_retained_in_eligible
+**Date:** 2026-05-10
+**Type:** DataPipeline
+**Trigger:** `medievalTile_*` packs flagged at 52–54% deletion rate in dry-run 2.
+
+**Decision:** Do NOT quarantine `medievalTile_*` packs. They remain in the eligible artifact-check pool. Tileset tiles with low color variance are expected; the sprites that pass the adjusted thresholds are legitimate training data. The ~52% that fail are genuine artifacts (solid fills, transparent tiles) correctly caught by the heuristics.
+
+**Governing Rule:** Rule 9 (user decision — explicit instruction to keep these in eligible pool)
+**Rationale:** A 52% deletion rate with the remaining 48% being valid tileset sprites is acceptable. The cleaner is working correctly on these packs.
+**Reversible:** N/A — no quarantine action taken.
+
+---
+
+## Architecture — CHANGE-033 Format Integrity Detection
+**Date:** 2026-05-10
+**Type:** Architecture
+**Trigger:** Corpus class distribution analysis revealed that format integrity is not tracked anywhere in the manifest schema. JPEG-contaminated PNGs can pass all existing checks (license, source, transparency, color count lower-bound, entropy) while being unusable for autoregressive training — lossy compression inflates unique color count and destroys clean palette boundaries. This is both a data quality gap and a provenance gap.
+
+**Decision:** Add CHANGE-033 — format integrity detection pass added to corpus pipeline. Implemented as `tools/format_integrity.py` and integrated into `clean_corpus.py`. Detection heuristic: unique non-transparent color count vs. resolution-dependent upper bound (64 for ≤16×16, 128 for ≤64×64). Suspects quarantined to `data/quarantine/format_suspect/`, never deleted. Four `format_provenance` fields written into every sprite_XXXX.json: `file_format`, `native_format`, `color_count_at_ingestion`, `palette_indexed`. At-ingestion integration: run_pipeline.py and harvest_loop.py write these fields at extraction time going forward.
+
+**Governing Rule:** Constitution Rule 5 (data provenance — format integrity is part of the provenance chain); Rule 4 (quality gate — JPEG-contaminated sprites must not enter training)
+**Alternatives Considered:** (A) Delete format_suspect sprites — rejected, may contain valid complex sprites that exceed bound legitimately. (B) Ignore format integrity at this phase — rejected, JPEG contamination is a silent training corruption vector. (C) Quarantine with full audit trail (chosen) — conservative, recoverable, auditable.
+**Approval gate:** Human spot-check of format_suspect quarantine sample before any flagged packs are treated as permanently excluded.
+**Confidence:** High
+**Risk Level:** Low — quarantine only, no deletions, full audit trail.
+**Reversible:** Yes (quarantine).
+
+---
+
+## Architecture — CHANGE-034 Multi-Class Semantic Labeling
+**Date:** 2026-05-10
+**Type:** Architecture
+**Trigger:** Corpus class distribution analysis confirmed: no per-sprite semantic class labels exist anywhere in the pipeline. The `is_tileset` binary flag covers one dimension; pack-level `genre_hint` covers 33% of sprites usefully (67% are "mixed"). The transformer cannot condition generation on class type without per-sprite labels. Large single-class corpus additions are unsafe without class conditioning because the model cannot distinguish class distribution at training time.
+
+**Decision:** Add CHANGE-034 — multi-class semantic labeling. Implemented as `tools/class_labeler.py`. Taxonomy: character (humanoid/monster/creature/npc), tileset (terrain/structure/dungeon/interior/exterior), environment (tree/rock/plant/water/structure/prop), effect (particle/projectile/explosion/magic/weather), ui (button/icon/panel/cursor/hud), item (weapon/armor/consumable/key_item/treasure), vehicle (ground/air/water/space), unknown. Rule-based only — pack name and path keywords. `unknown` is always the no-confidence fallback; silent miscategorization is explicitly rejected as worse than acknowledged unknown. Writes `sprite_class` + `sprite_subclass` + `class_confidence` + `class_rule_matched` into every sprite_XXXX.json. `sheet_type_classifier.py` extended to output class taxonomy alongside existing binary classification. At-ingestion integration: run_pipeline.py and harvest_loop.py write class labels at extraction time going forward. Missing `sprite_class` field treated as format violation.
+
+**Governing Rule:** Constitution Rule 4 (quality gate — class conditioning required for Phase 4 training); Rule 9 (user decision — class taxonomy and approval gates defined by user)
+**Approval gates (mandatory before Phase 4):**
+1. Unknown class rate < 15% — if higher, report which packs drive unknowns, propose rule additions, re-run after approval
+2. Human spot-check of 20-sprite sample per class for labeling accuracy
+3. Human spot-check of format_suspect quarantine for false positives
+**Alternatives Considered:** (A) ML-based classifier — rejected for Phase 3, no labeled training data exists yet, rule-based is transparent and auditable. (B) Manual labeling — impractical at 79,758 sprites. (C) Rule-based with unknown fallback (chosen) — auditable, no silent miscategorization, refinable iteratively.
+**Confidence:** High on approach; Medium on initial unknown rate (may exceed 15% on first pass, refinement protocol defined)
+**Risk Level:** Medium — mislabeling possible, mitigated by confidence logging, spot-check gates, and patch-ability of labels without re-extraction.
+**Reversible:** Yes — labels are fields in sprite_XXXX.json, correctable without re-extraction.
+
+---

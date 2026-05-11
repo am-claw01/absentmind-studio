@@ -979,6 +979,58 @@ The web UI skeleton (working chat panel + image preview + approve/reject control
 
 A sprite without a manifest entry does not get trained on. No exceptions.
 
+### 15.1 Format Provenance (CHANGE-033)
+
+Every `sprite_XXXX.json` file in the corpus must include a `format_provenance` block:
+
+```json
+"format_provenance": {
+  "file_format": "png",
+  "native_format": "png_native" | "png_from_jpeg_suspected" | "unknown",
+  "color_count_at_ingestion": 42,
+  "palette_indexed": true | false
+}
+```
+
+- **`file_format`**: always `"png"` — non-PNG assets are rejected at scrape time; this field documents the check occurred
+- **`native_format`**: `"png_from_jpeg_suspected"` if unique non-transparent color count exceeds the resolution-dependent upper bound (64 colors for ≤16×16 sprites, 128 for ≤64×64); `"png_native"` if within bound; `"unknown"` if metadata unavailable
+- **`color_count_at_ingestion`**: unique non-transparent color count at initial processing — permanent record, never updated retroactively
+- **`palette_indexed`**: `true` if source PNG uses palette-indexed color mode, `false` if RGBA/RGB
+
+Sprites flagged as `"png_from_jpeg_suspected"` are quarantined to `data/quarantine/format_suspect/` before the triage scoring or training pipeline. They are never deleted unilaterally — packs with >20% format_suspect rate require human review before permanent exclusion.
+
+Missing `format_provenance` block in a corpus sprite is treated as a format integrity gap. `tools/format_integrity.py` performs a retroactive pass to write these fields across existing corpus entries and quarantine suspects.
+
+### 15.2 Class Labels (CHANGE-034)
+
+Every `sprite_XXXX.json` file in the corpus must include class label fields:
+
+```json
+"sprite_class": "character" | "tileset" | "environment" | "effect" | "ui" | "item" | "vehicle" | "unknown",
+"sprite_subclass": "humanoid" | "monster" | ... | null,
+"class_confidence": 0.0–1.0,
+"class_rule_matched": "pack_keyword:characters" | "path_keyword:tiles/" | "tileset_meta_present" | ...
+```
+
+**Primary classes and subclasses:**
+
+| primary | subclasses |
+|---|---|
+| `character` | humanoid, monster, creature, npc |
+| `tileset` | terrain, structure, dungeon, interior, exterior |
+| `environment` | tree, rock, plant, water, structure, prop |
+| `effect` | particle, projectile, explosion, magic, weather |
+| `ui` | button, icon, panel, cursor, hud |
+| `item` | weapon, armor, consumable, key_item, treasure |
+| `vehicle` | ground, air, water, space |
+| `unknown` | (no subclass) |
+
+`unknown` is a valid and required output when no rule fires confidently. Silent miscategorization is never acceptable — `unknown` with logged confidence is always preferred over a forced label.
+
+**Phase 4 gate:** Unknown class rate must be below 15% across the corpus before any training run begins. If the rate exceeds 15% after the initial labeling pass, the specific packs driving unknowns are reported and rule additions are proposed for human review before re-running.
+
+Missing `sprite_class` field in a corpus sprite is treated as a pipeline compliance violation. `tools/class_labeler.py` performs the retroactive labeling pass.
+
 ---
 
 ## 16. Post-MVP Architecture Evolution

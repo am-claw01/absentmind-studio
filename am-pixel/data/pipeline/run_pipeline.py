@@ -3,6 +3,9 @@
 AM Pixel — Batch extraction pipeline.
 Processes all downloaded sprite sheets through: extract -> index -> classify -> reorder
 Outputs to data/corpus/train/ and data/corpus/validation/
+
+CHANGE-033: writes format_provenance fields into sprite_XXXX.json at extraction time.
+CHANGE-034: writes sprite_class + sprite_subclass into sprite_XXXX.json at extraction time.
 """
 import json, sys, random
 from pathlib import Path
@@ -14,13 +17,28 @@ VAL      = BASE / "data" / "corpus" / "validation"
 STATS    = BASE / "data" / "corpus_stats.md"
 
 PIPELINE = BASE / 'data' / 'pipeline'
+TOOLS    = BASE / 'tools'
 sys.path.insert(0, str(BASE))
 sys.path.insert(0, str(PIPELINE))
+sys.path.insert(0, str(TOOLS))
 
 from extractor         import extract_sheet
 from indexer           import index_sprite
 from pixel_classifier  import classify_sprite
 from sequence_reorderer import reorder_sprite, save_sequence
+
+# CHANGE-033 / CHANGE-034: import at-ingestion labeling functions
+try:
+    from format_integrity import compute_format_provenance, is_format_suspect
+    HAS_FORMAT_INTEGRITY = True
+except ImportError:
+    HAS_FORMAT_INTEGRITY = False
+
+try:
+    from class_labeler import label_sprite
+    HAS_CLASS_LABELER = True
+except ImportError:
+    HAS_CLASS_LABELER = False
 
 TRAIN.mkdir(parents=True, exist_ok=True)
 VAL.mkdir(parents=True, exist_ok=True)
@@ -95,6 +113,35 @@ for sheet_path in all_pngs:
             except Exception as e:
                 stats["errors"].append(f"index {png_path}: {e}")
                 continue
+
+            # CHANGE-033: write format_provenance + CHANGE-034: write sprite_class at ingestion
+            try:
+                meta = json.loads(Path(json_path).read_text())
+                pack_name = Path(json_path).relative_to(TRAIN).parts[0]
+                rel_path  = str(Path(json_path).relative_to(TRAIN))
+                has_tileset_meta = (Path(json_path).parent / "tileset_meta.json").exists()
+
+                if HAS_FORMAT_INTEGRITY:
+                    fp = compute_format_provenance(meta, Path(png_path))
+                    meta["format_provenance"] = fp
+                else:
+                    meta["format_provenance"] = {
+                        "file_format": "png", "native_format": "unknown",
+                        "color_count_at_ingestion": -1, "palette_indexed": False,
+                    }
+
+                if HAS_CLASS_LABELER:
+                    cls = label_sprite(pack_name, rel_path, has_tileset_meta)
+                    meta.update(cls)
+                else:
+                    meta["sprite_class"]       = "unknown"
+                    meta["sprite_subclass"]    = None
+                    meta["class_confidence"]   = 0.0
+                    meta["class_rule_matched"] = "class_labeler_unavailable"
+
+                Path(json_path).write_text(json.dumps(meta, indent=2))
+            except Exception as e:
+                stats["errors"].append(f"label {png_path}: {e}")
 
             # Classify + reorder
             try:

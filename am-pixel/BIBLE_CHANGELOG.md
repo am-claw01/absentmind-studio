@@ -452,5 +452,21 @@ Status: Merged into Bible v1.5. Document retained as proposal archive.
 
 ---
 
-*AM Pixel Bible Changelog v1.5 | Absentmind Studio*
+## PROPOSED_CHANGES_004.md (Series 004 — Data Integrity & Class Labeling)
+
+### v0.1 — Format integrity and class conditioning
+- CHANGE-033: Format integrity detection — JPEG contamination heuristic, `format_provenance` fields added to sprite_XXXX.json schema, `data/quarantine/format_suspect/` directory, `tools/format_integrity.py`
+- CHANGE-034: Multi-class semantic labeling — 7-class taxonomy (character/tileset/environment/effect/ui/item/vehicle/unknown), `sprite_class` + `sprite_subclass` fields added to sprite_XXXX.json schema, `tools/class_labeler.py`, Phase 4 gate: unknown rate < 15%
+
+Documents updated this session (2026-05-10):
+- `SPEC.md` — §15 expanded with §15.1 (format_provenance schema) and §15.2 (class label schema); version bumped to 1.6
+- `FOLDER_STRUCTURE.md` — quarantine/ subtree documented (texture_packs, monochrome_packs, outline_art, ui_elements, format_suspect); format_integrity.py + class_labeler.py + clean_corpus.py added to tools/ listing
+- `PROPOSED_CHANGES_004.md` — created, CHANGE-033 and CHANGE-034 staged
+- `logs/decision_log.md` — Architecture entries for CHANGE-033 and CHANGE-034 added; DataPipeline entries for texture_packs, monochrome_packs, outline_art, ui_elements quarantine decisions; medievalTile retained-in-eligible decision
+
+Status: CHANGE-033 and CHANGE-034 implemented (tools built, pipeline updated). Coordinated corpus pass pending user confirmation of live cleaning run.
+
+---
+
+*AM Pixel Bible Changelog v1.6 | Absentmind Studio*
 *v1.0 compiled retroactively | ongoing entries in real time*

@@ -58,8 +58,10 @@ STATS_PATH    = DATA_DIR / "corpus_stats.md"
 LOG_PATH      = SCRIPT_DIR / "harvest_loop.log"
 
 PIPELINE_DIR  = DATA_DIR / "pipeline"
+TOOLS_DIR     = PROJECT_ROOT / "tools"
 sys.path.insert(0, str(PIPELINE_DIR))
 sys.path.insert(0, str(DATA_DIR))
+sys.path.insert(0, str(TOOLS_DIR))
 
 DELAY = 1.5   # seconds between HTTP requests
 CYCLE_PAUSE = 120  # seconds between full harvest cycles
@@ -444,6 +446,18 @@ def run_pipeline_on(pngs: list[Path], manifest: list[dict]) -> dict:
     from sheet_type_classifier import classify_sheet
     from view_pair_detector    import find_candidate_pairs
 
+    # CHANGE-033 / CHANGE-034: at-ingestion labeling
+    try:
+        from format_integrity import compute_format_provenance
+        _has_fmt = True
+    except ImportError:
+        _has_fmt = False
+    try:
+        from class_labeler import label_sprite
+        _has_cls = True
+    except ImportError:
+        _has_cls = False
+
     CORPUS_TRAIN.mkdir(parents=True, exist_ok=True)
     CORPUS_VAL.mkdir(parents=True, exist_ok=True)
 
@@ -579,6 +593,30 @@ def run_pipeline_on(pngs: list[Path], manifest: list[dict]) -> dict:
                     h          = idx_result["height"]
                     flat       = idx_result["index_grid"]
                     index_grid = [flat[row * w: row * w + w] for row in range(h)]
+
+                    # CHANGE-033 / CHANGE-034: write format_provenance + class label at ingestion
+                    try:
+                        meta = json.loads(sprite_json.read_text(encoding="utf-8"))
+                        pack_name_str = out_dir.relative_to(CORPUS_TRAIN).parts[0] if CORPUS_TRAIN in out_dir.parents else out_dir.name
+                        rel_path_str  = str(sprite_json.relative_to(CORPUS_TRAIN)) if CORPUS_TRAIN in sprite_json.parents else sprite_json.name
+                        has_tm        = (out_dir / "tileset_meta.json").exists()
+                        if _has_fmt:
+                            meta["format_provenance"] = compute_format_provenance(meta, sp)
+                        else:
+                            meta["format_provenance"] = {
+                                "file_format": "png", "native_format": "unknown",
+                                "color_count_at_ingestion": -1, "palette_indexed": False,
+                            }
+                        if _has_cls:
+                            meta.update(label_sprite(pack_name_str, rel_path_str, has_tm))
+                        else:
+                            meta["sprite_class"] = "unknown"
+                            meta["sprite_subclass"] = None
+                            meta["class_confidence"] = 0.0
+                            meta["class_rule_matched"] = "class_labeler_unavailable"
+                        sprite_json.write_text(json.dumps(meta, indent=2), encoding="utf-8")
+                    except Exception:
+                        pass  # labeling failure must not break pipeline
 
                     # Stage 3: classify
                     cat_grid = classify_sprite(index_grid, w, h, five_category=False)
